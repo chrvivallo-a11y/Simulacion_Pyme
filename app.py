@@ -49,13 +49,13 @@ with tab_individual:
     col_d1, col_d2, col_d3 = st.columns(3)
     
     with col_d1:
-        monto = st.number_input("Monto Líquido ($)", min_value=1000000, value=10000000, step=1000000)
-        plazo = st.number_input("Plazo (Cuotas)", min_value=3, max_value=72, value=36, step=1)
+        monto = st.number_input("Monto Líquido ($)", min_value=100000, value=900000000, step=1000000)
+        plazo = st.number_input("Plazo (Cuotas)", min_value=3, max_value=120, value=36, step=1)
         tipo_garantia = st.selectbox("Tipo de Crédito", ["Sin Garantía (Comercial)", "Con Garantía Estatal (GGEE)"])
         
     with col_d2:
         # Los valores de estos selectbox corresponden EXACTAMENTE a los índices de tus CSV
-        perfil = st.selectbox("Perfil de Riesgo", ["1", "2", "3", "4", "5"])
+        perfil = st.selectbox("Perfil de Riesgo", ["1", "2", "3", "4", "5", "6", "7", "8"])
         segmento = st.selectbox("Segmento", ["NACE", "MEDIANA", "PEQUENA", "PYME DIGITAL", "SOCIO"])
         
     with col_d3:
