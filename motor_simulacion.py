@@ -15,7 +15,7 @@ def cargar_datos_csv():
     global DATA_CACHE
     directorio_actual = os.path.dirname(__file__)
     
-archivos = {
+    archivos = {                                       # <--- ¡DEBE TENER ESTOS 4 ESPACIOS!
         'comercial': '1. plantilla_comercial.csv',
         'ggee': '2. plantilla_ggee.csv',
         'perfiles': '3. plantilla_perfiles.csv',
@@ -24,7 +24,7 @@ archivos = {
         'seguros': '6. plantilla_seguros.csv',
         'cf': 'cf.csv',
         'uf': 'uf.csv',
-        'desgravamen': 'desgravamen_aval.csv'  # <--- NUEVO ARCHIVO
+        'desgravamen': 'desgravamen_aval.csv'
     }
     
     for clave, nombre_archivo in archivos.items():
