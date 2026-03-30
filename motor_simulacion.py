@@ -13,9 +13,7 @@ DATA_CACHE = {}
 def cargar_datos_csv():
     """Carga y procesa todos los CSVs en memoria una sola vez al iniciar la app."""
     global DATA_CACHE
-    # Usa la carpeta 'data' donde guardaste tus CSV en el paso anterior
     directorio_actual = os.path.dirname(__file__)
-    ruta_directorio = os.path.join(directorio_actual, 'data')
     
     archivos = {
         'comercial': '1. plantilla_comercial.csv',
@@ -24,14 +22,18 @@ def cargar_datos_csv():
         'segmentos': '4. plantilla_segmentos.csv',
         'canal': '5. plantilla_canal.csv',
         'seguros': '6. plantilla_seguros.csv',
-        'cf': 'cf.csv'
+        'cf': 'cf.csv',
+        'uf': 'uf.csv'  # <--- NUEVO ARCHIVO DE UF
     }
     
     for clave, nombre_archivo in archivos.items():
-        ruta = os.path.join(ruta_directorio, nombre_archivo)
+        ruta = os.path.join(directorio_actual, nombre_archivo)
         
-        if clave == 'cf':
-            # El archivo CF a veces viene separado por punto y coma o coma
+        # Si el archivo no existe aún, que no explote la app
+        if not os.path.exists(ruta):
+            continue
+            
+        if clave in ['cf', 'uf']:
             try:
                 df = pd.read_csv(ruta, sep=';', engine='python')
                 if len(df.columns) < 2:
@@ -40,12 +42,10 @@ def cargar_datos_csv():
                 df = pd.read_csv(ruta, sep=None, engine='python')
             DATA_CACHE[clave] = df
         else:
-            # Matrices de precios
             df = pd.read_csv(ruta, sep=None, engine='python')
-            df.set_index(df.columns[0], inplace=True) # Fija la primera columna como índice (Plazo o String)
-            # Reemplazar comas por puntos (formato chileno) y pasar a flotante matemático
+            df.set_index(df.columns[0], inplace=True) 
             df = df.replace({',': '.'}, regex=True).astype(float)
-            df.index = df.index.astype(str) # El índice siempre como texto para búsquedas
+            df.index = df.index.astype(str)
             DATA_CACHE[clave] = df
 
 def obtener_valor_matriz(tipo_plantilla: str, valor_fila: str, monto: float, es_plazo=False) -> float:
@@ -94,45 +94,30 @@ def obtener_costo_fondo_historico(plazo_meses: int) -> float:
     return 0.0
 
 def obtener_uf(fecha_consulta: date) -> float:
-    """Obtiene el valor de la UF y muestra errores directamente en la interfaz web."""
+    """Obtiene el valor de la UF desde el archivo uf.csv en memoria."""
     try:
-        # 1. Validar que los secretos existan realmente
-        if "BCC_USUARIO" not in st.secrets or "BCC_PASSWORD" not in st.secrets:
-            st.error("🚨 Error: Streamlit no encuentra 'BCC_USUARIO' o 'BCC_PASSWORD' en los Secrets. Revisa los ajustes de la app.")
+        df_uf = DATA_CACHE.get('uf')
+        if df_uf is None or df_uf.empty:
             return 38000.0
 
-        usuario = st.secrets["BCC_USUARIO"]
-        password = st.secrets["BCC_PASSWORD"]
+        # Convertir la columna fecha a formato Date nativo
+        df_uf['fecha'] = pd.to_datetime(df_uf['fecha']).dt.date
         
-        fecha_str = fecha_consulta.strftime('%Y-%m-%d')
+        # Buscar la fecha solicitada o la última válida hacia atrás
+        df_ordenado = df_uf.sort_values(by='fecha')
+        filas_validas = df_ordenado[df_ordenado['fecha'] <= fecha_consulta]
         
-        url = (
-            f"https://si3.bancocentral.cl/SieteRestWS/SieteRestWS.ashx?"
-            f"user={usuario}&pass={password}&"
-            f"firstdate={fecha_str}&lastdate={fecha_str}&"
-            f"timeseries=F073.UFF.PRE.Z.D&function=GetSeries"
-        )
-        
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            
-            if data.get('CodigoError') == 0:
-                observaciones = data.get('Series', {}).get('Obs', [])
-                if observaciones:
-                    return float(observaciones[0].get('value'))
-                else:
-                    st.warning(f"⚠️ El Banco Central respondió bien, pero dice que no hay valor de UF publicado para la fecha {fecha_str}.")
-            else:
-                st.error(f"❌ El Banco Central rechazó la conexión. Razón: {data.get('DescripcionError')}")
-        else:
-            st.error(f"🔌 Error de red al contactar al Banco Central: Código HTTP {response.status_code}")
+        if not filas_validas.empty:
+            val = filas_validas.iloc[-1]['valor']
+            # Limpiar por si viene con coma decimal en vez de punto
+            if isinstance(val, str):
+                val = float(val.replace(',', '.'))
+            return float(val)
             
     except Exception as e:
-        st.error(f"🛠️ Error técnico en el código de la UF: {e}")
+        print(f"Error técnico leyendo uf.csv: {e}")
         
-    return 38000.0
+    return 39800.0 # Salvavidas si algo falla
 
 # ==============================================================================
 # MOTOR CENTRAL DE SIMULACIÓN PYME
