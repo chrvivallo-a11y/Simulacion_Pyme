@@ -53,6 +53,7 @@ def cargar_datos_csv():
             df = df.replace({',': '.'}, regex=True).astype(float)
             df.index = df.index.astype(str)
             DATA_CACHE[clave] = df
+
 def obtener_valor_matriz(tipo_plantilla: str, valor_fila: str, monto: float, es_plazo=False) -> float:
     """Cruza Fila (Plazo o String) vs Columna (Monto) para obtener el valor del CSV"""
     df = DATA_CACHE[tipo_plantilla]
