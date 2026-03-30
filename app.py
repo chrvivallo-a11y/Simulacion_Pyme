@@ -49,7 +49,7 @@ with tab_individual:
     col_d1, col_d2, col_d3 = st.columns(3)
     
     with col_d1:
-        monto = st.number_input("Monto Líquido ($)", min_value=100000, value=900000000, step=1000000)
+        monto = st.number_input("Monto Líquido ($)", min_value=100000, value=1000000, step=1000000)
         plazo = st.number_input("Plazo (Cuotas)", min_value=3, max_value=120, value=36, step=1)
         tipo_garantia = st.selectbox("Tipo de Crédito", ["Sin Garantía (Comercial)", "Con Garantía Estatal (GGEE)"])
         
