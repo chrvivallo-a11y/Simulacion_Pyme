@@ -94,17 +94,18 @@ def obtener_costo_fondo_historico(plazo_meses: int) -> float:
     return 0.0
 
 def obtener_uf(fecha_consulta: date) -> float:
-    """Obtiene el valor de la UF usando la API del Banco Central de Chile (Si3)."""
+    """Obtiene el valor de la UF y muestra errores directamente en la interfaz web."""
     try:
-        # 1. Obtenemos las credenciales desde los secretos de Streamlit
+        # 1. Validar que los secretos existan realmente
+        if "BCC_USUARIO" not in st.secrets or "BCC_PASSWORD" not in st.secrets:
+            st.error("🚨 Error: Streamlit no encuentra 'BCC_USUARIO' o 'BCC_PASSWORD' en los Secrets. Revisa los ajustes de la app.")
+            return 38000.0
+
         usuario = st.secrets["BCC_USUARIO"]
         password = st.secrets["BCC_PASSWORD"]
         
-        # 2. La API del Banco Central usa el formato YYYY-MM-DD
         fecha_str = fecha_consulta.strftime('%Y-%m-%d')
         
-        # 3. Construimos la URL
-        # F073.UFF.PRE.Z.D es el código oficial de la serie diaria de la UF
         url = (
             f"https://si3.bancocentral.cl/SieteRestWS/SieteRestWS.ashx?"
             f"user={usuario}&pass={password}&"
@@ -112,32 +113,26 @@ def obtener_uf(fecha_consulta: date) -> float:
             f"timeseries=F073.UFF.PRE.Z.D&function=GetSeries"
         )
         
-        # 4. Hacemos la petición
         response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
             
-            # El Banco Central devuelve CodigoError = 0 si todo salió bien
             if data.get('CodigoError') == 0:
                 observaciones = data.get('Series', {}).get('Obs', [])
                 if observaciones:
-                    # Extraemos el valor y lo convertimos a float
-                    valor_uf = float(observaciones[0].get('value'))
-                    return valor_uf
+                    return float(observaciones[0].get('value'))
                 else:
-                    print(f"Advertencia: El Banco Central no tiene UF para {fecha_str}.")
+                    st.warning(f"⚠️ El Banco Central respondió bien, pero dice que no hay valor de UF publicado para la fecha {fecha_str}.")
             else:
-                print(f"Error de la API BCC: {data.get('DescripcionError')}")
+                st.error(f"❌ El Banco Central rechazó la conexión. Razón: {data.get('DescripcionError')}")
         else:
-            print(f"Error de conexión con BCC: Código {response.status_code}")
+            st.error(f"🔌 Error de red al contactar al Banco Central: Código HTTP {response.status_code}")
             
-    except KeyError as e:
-        print(f"Falta configurar el secreto en Streamlit: {e}")
     except Exception as e:
-        print(f"Error técnico consultando UF al Banco Central: {e}")
+        st.error(f"🛠️ Error técnico en el código de la UF: {e}")
         
-    return 38000.0 # Valor de respaldo (Fallback) en caso de que todo falle
+    return 38000.0
 
 # ==============================================================================
 # MOTOR CENTRAL DE SIMULACIÓN PYME
