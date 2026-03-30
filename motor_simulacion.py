@@ -6,232 +6,223 @@ from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from workalendar.america import Chile
 
-# ==============================================================================
-# CONFIGURACIÓN DE TMC (Tasa Máxima Convencional)
-# Actualiza estos valores mensualmente según lo publicado por la CMF.
-# ==============================================================================
-TMC_HASTA_50_UF = 38.50    # Tramo P02T01
-TMC_HASTA_200_UF = 30.20   # Tramo P02T02
-TMC_HASTA_5000_UF = 25.10  # Tramo P02T03
-TMC_MAS_5000_UF = 18.00    # Tramo P02T04
+# Cache para almacenar los DataFrames en memoria y no leer los CSVs en cada clic
+DATA_CACHE = {}
 
-# ==============================================================================
-# FUNCIONES AUXILIARES (Reemplazan la Base de Datos)
-# ==============================================================================
+def cargar_datos_csv():
+    """Carga y procesa todos los CSVs en memoria una sola vez al iniciar la app."""
+    global DATA_CACHE
+    # Usa la carpeta 'data' donde guardaste tus CSV en el paso anterior
+    directorio_actual = os.path.dirname(__file__)
+    ruta_directorio = os.path.join(directorio_actual, 'data')
+    
+    archivos = {
+        'comercial': '1. plantilla_comercial.csv',
+        'ggee': '2. plantilla_ggee.csv',
+        'perfiles': '3. plantilla_perfiles.csv',
+        'segmentos': '4. plantilla_segmentos.csv',
+        'canal': '5. plantilla_canal.csv',
+        'seguros': '6. plantilla_seguros.csv',
+        'cf': 'cf.csv'
+    }
+    
+    for clave, nombre_archivo in archivos.items():
+        ruta = os.path.join(ruta_directorio, nombre_archivo)
+        
+        if clave == 'cf':
+            # El archivo CF a veces viene separado por punto y coma o coma
+            try:
+                df = pd.read_csv(ruta, sep=';', engine='python')
+                if len(df.columns) < 2:
+                    df = pd.read_csv(ruta, sep=',', engine='python')
+            except:
+                df = pd.read_csv(ruta, sep=None, engine='python')
+            DATA_CACHE[clave] = df
+        else:
+            # Matrices de precios
+            df = pd.read_csv(ruta, sep=None, engine='python')
+            df.set_index(df.columns[0], inplace=True) # Fija la primera columna como índice (Plazo o String)
+            # Reemplazar comas por puntos (formato chileno) y pasar a flotante matemático
+            df = df.replace({',': '.'}, regex=True).astype(float)
+            df.index = df.index.astype(str) # El índice siempre como texto para búsquedas
+            DATA_CACHE[clave] = df
+
+def obtener_valor_matriz(tipo_plantilla: str, valor_fila: str, monto: float, es_plazo=False) -> float:
+    """Cruza Fila (Plazo o String) vs Columna (Monto) para obtener el valor del CSV"""
+    df = DATA_CACHE[tipo_plantilla]
+    
+    # 1. Determinar la Columna (Monto en Millones)
+    monto_millones = monto / 1_000_000.0
+    columnas_monto = sorted([int(c) for c in df.columns])
+    
+    col_seleccionada = str(columnas_monto[-1]) # Asume la columna mayor por defecto
+    for c in columnas_monto:
+        if monto_millones <= c:
+            col_seleccionada = str(c)
+            break
+            
+    # 2. Determinar la Fila
+    if es_plazo:
+        # Busca el tramo de plazo "hasta" el cual es válido (<=)
+        filas_plazo = sorted([int(float(r)) for r in df.index])
+        fila_seleccionada = str(filas_plazo[-1])
+        for r in filas_plazo:
+            if float(valor_fila) <= r:
+                fila_seleccionada = str(r)
+                break
+    else:
+        # Busca por texto exacto (Ej: 'PYME DIGITAL', 'CCDD', '1')
+        fila_seleccionada = str(valor_fila).upper().strip()
+        if fila_seleccionada not in df.index:
+            return 0.0 # Si el perfil o segmento no existe/no tiene descuento, retorna 0
+            
+    return float(df.loc[fila_seleccionada, col_seleccionada])
+
+def obtener_costo_fondo_historico(plazo_meses: int) -> float:
+    """Busca en cf.csv la fecha (periodo) más reciente y cruza con el plazo."""
+    df_cf = DATA_CACHE['cf']
+    periodo_reciente = df_cf['periodo'].max()
+    df_reciente = df_cf[df_cf['periodo'] == periodo_reciente]
+    
+    fila = df_reciente[(df_reciente['plazo_desde'] <= plazo_meses) & (df_reciente['plazo_hasta'] >= plazo_meses)]
+    if not fila.empty:
+        val = fila['cf'].iloc[0]
+        if isinstance(val, str):
+            val = float(val.replace(',', '.'))
+        return float(val)
+    return 0.0
 
 def obtener_uf(fecha_consulta: date) -> float:
-    """Obtiene el valor de la UF para una fecha específica usando mindicador.cl"""
+    """Llamada a mindicador.cl para la UF"""
     try:
-        # La API requiere formato dd-mm-yyyy
         fecha_str = fecha_consulta.strftime('%d-%m-%Y')
-        url = f'https://mindicador.cl/api/uf/{fecha_str}'
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get('serie'):
-            return float(data['serie'][0]['valor'])
-        else:
-            print(f"Advertencia: No se encontró UF para {fecha_str}, usando valor por defecto.")
-            return 38000.0 
-    except Exception as e:
-        print(f"Error consultando API UF: {e}. Usando valor por defecto.")
-        return 38000.0
-
-def ajustar_dia_habil(fecha_ven: date, calendario) -> date:
-    """Avanza la fecha hasta el siguiente día hábil usando workalendar"""
-    while not calendario.is_working_day(fecha_ven):
-        fecha_ven += timedelta(days=1)
-    return fecha_ven
-
-def obtener_valor_plantilla(ruta_csv: str, nombre_plantilla: str, monto_bruto: float, plazo: int) -> float:
-    """Busca el spread o descuento en el CSV de plantillas"""
-    try:
-        df = pd.read_csv(ruta_csv)
-        # Filtrar equivalente al WHERE del SQL
-        filtro = (
-            (df['plantilla'] == nombre_plantilla) &
-            (df['monto_desde'] <= monto_bruto) & (df['monto_hasta'] >= monto_bruto) &
-            (df['plazo_desde'] <= plazo) & (df['plazo_hasta'] >= plazo)
-        )
-        resultado = df[filtro]
-        if not resultado.empty:
-            return float(resultado['valor'].iloc[0])
-        return 0.0
-    except Exception as e:
-        print(f"Error leyendo {ruta_csv}: {e}")
-        return 0.0
-
-def obtener_costo_fondos(ruta_csv: str, plazo_meses: int, resguardo_cf: float) -> float:
-    """Busca el costo de fondos en el CSV y lo anualiza"""
-    try:
-        df = pd.read_csv(ruta_csv)
-        df['fecha'] = pd.to_datetime(df['fecha']).dt.date
-        
-        # Mapeo de meses a años según tu lógica SQL: 
-        # <=24 -> 1 año, <=36 -> 2 años, <=48 -> 3 años, <=60 -> 4 años, <=72 -> 5 años
-        if plazo_meses <= 24: plazo_anos = 1
-        elif plazo_meses <= 36: plazo_anos = 2
-        elif plazo_meses <= 48: plazo_anos = 3
-        elif plazo_meses <= 60: plazo_anos = 4
-        else: plazo_anos = 5
-        
-        # Buscar la fecha máxima (más reciente) en el CSV
-        max_fecha = df['fecha'].max()
-        df_reciente = df[df['fecha'] == max_fecha]
-        
-        # Obtener el CF para el plazo en años
-        resultado = df_reciente[df_reciente['plazo'] == plazo_anos]
-        if not resultado.empty:
-            cf_base = float(resultado['cf'].iloc[0])
-            return (cf_base * 12.0) + resguardo_cf
-        return 0.0
-    except Exception as e:
-        print(f"Error leyendo {ruta_csv}: {e}")
-        return 0.0
+        response = requests.get(f'https://mindicador.cl/api/uf/{fecha_str}', timeout=3)
+        if response.status_code == 200 and response.json().get('serie'):
+            return float(response.json()['serie'][0]['valor'])
+    except:
+        pass
+    return 38000.0 # Fallback
 
 # ==============================================================================
-# FUNCIÓN PRINCIPAL DE SIMULACIÓN
+# MOTOR CENTRAL DE SIMULACIÓN PYME
 # ==============================================================================
+def com_simulacion_pyme(
+    in_fecha_curse: date, 
+    in_primer_venc: date, 
+    in_monto_liquido: int, 
+    in_cuotas: int, 
+    in_garantia_estatal: bool, # True (GGEE) o False (Comercial)
+    in_perfil: str,           # '1', '2', '3', '4' o '5'
+    in_segmento: str,         # 'NACE', 'MEDIANA', 'PYME DIGITAL', etc.
+    in_canal: str,            # 'CCDD' o 'ASISTIDO'
+    in_seguro: str            # 'DESGRAVAMEN' o 'SINSEGURO'
+) -> dict:
+    
+    # 0. Cargar plantillas si es la primera ejecución
+    if not DATA_CACHE:
+        cargar_datos_csv()
 
-def com_simulacion(in_fecha_curse: date, in_primer_venc: date, in_monto_liquido: int, 
-                   in_plantilla_tasa: str, in_plantilla_descuento: str, 
-                   in_cuotas: int, in_resguardo_cf: float) -> dict:
-    
-    # 1. Rutas relativas a los CSV en el repositorio
-    # os.path.dirname(__file__) obtiene la ruta donde está guardado este script
-    directorio_actual = os.path.dirname(__file__)
-    ruta_plantillas = os.path.join(directorio_actual, 'data', 'plantillas.csv')
-    ruta_cf = os.path.join(directorio_actual, 'data', 'cf.csv')
-    
-    # Instanciar calendario chileno
+    # Cálculos previos (Monto Bruto)
     cal_chile = Chile()
-
-    # Variables iniciales fijas
-    plazo = in_cuotas
     notario = 2640
     tasa_impuesto_plazo = 0.066
     tasa_impuesto_max = 0.8
-    tasa_desg = 0.0
+    tasa_desg = 0.0 # Si tu seguro tiene costo prima, modificar aquí
     
+    out_plazo_aprox = in_cuotas
+    tasa_impuesto = min(out_plazo_aprox * tasa_impuesto_plazo, tasa_impuesto_max)
+    
+    # Es mejor buscar precios con el monto bruto, porque es el monto real financiado
+    monto_bruto = math.ceil((in_monto_liquido + notario) / (1.0 - tasa_impuesto/100.0 - tasa_desg))
+
+    # =========================================================
+    # CASCADA DE PRICING (Puntos 1 al 8)
+    # =========================================================
+    
+    # P1. Spread Base
+    tipo_base = 'ggee' if in_garantia_estatal else 'comercial'
+    spread_base = obtener_valor_matriz(tipo_base, in_cuotas, monto_bruto, es_plazo=True)
+    
+    # P2 y P3. Descuentos Perfil y Segmento (Se suman, ya que en el CSV vienen negativos)
+    desc_perfil = obtener_valor_matriz('perfiles', in_perfil, monto_bruto)
+    desc_segmento = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
+    spread = spread_base + desc_perfil + desc_segmento
+    
+    # P4 y P5. Descuentos Canal y Seguro (Porcentajes de descuento multiplicadores)
+    pct_canal = obtener_valor_matriz('canal', in_canal, monto_bruto)
+    pct_seguro = obtener_valor_matriz('seguros', in_seguro, monto_bruto)
+    
+    # P6. Spread Resultante
+    spread_resultante = spread * (1.0 - (pct_canal / 100.0)) * (1.0 - (pct_seguro / 100.0))
+    
+    # P7. Costo de Fondo Mensual
+    cf_mensual = obtener_costo_fondo_historico(in_cuotas)
+    
+    # P8. Construcción de Tasas Finales
+    tasa_anual = spread_resultante + (cf_mensual * 12.0)
+    tasa_mensual = tasa_anual / 12.0 
+    
+    # Validación con TMC (Asumimos P02T03 standard)
+    tmc_mensual = 25.10 / 12.0 
+    tasa_mensual_aplicada = min(tasa_mensual, tmc_mensual)
+
+    # =========================================================
+    # GENERACIÓN DE TABLA DE AMORTIZACIÓN (Punto 9)
+    # =========================================================
     tabla = []
+    fecha_ven = in_fecha_curse
     
-    # ---------------------------------------------------------
-    # Generación de Fechas y Cuotas
-    # ---------------------------------------------------------
-    for cuota in range(plazo + 1):
-        if cuota == 0:
-            fecha_ven = in_fecha_curse
-        elif cuota == 1:
+    for cuota in range(in_cuotas + 1):
+        if cuota == 1:
             fecha_ven = in_primer_venc
-        else:
+        elif cuota > 1:
             fecha_ven = in_primer_venc + relativedelta(months=cuota-1)
             
-        # Ajuste de día hábil
-        fecha_ven = ajustar_dia_habil(fecha_ven, cal_chile)
-        
-        tabla.append({
-            'cuota': cuota, 'fec_ven': fecha_ven,
-            'dias': 0, 'dias_acum': 0, 'tasa_diaria': 0.0,
-            'calc_cuota1': 1.0 if cuota == 0 else 0.0,
-            'calc_cuota2': 0.0,
-            'saldo_insoluto': 0.0, 'amortizacion': 0.0, 'intereses': 0.0
-        })
+        while not cal_chile.is_working_day(fecha_ven):
+            fecha_ven += timedelta(days=1)
+            
+        tabla.append({'cuota': cuota, 'fec_ven': fecha_ven, 'dias': 0, 'tasa_diaria': 0.0, 'calc_cuota1': 1.0 if cuota == 0 else 0.0, 'calc_cuota2': 0.0})
 
-    # Cálculo de plazo en meses
-    fecha_final = tabla[-1]['fec_ven'] - relativedelta(months=1)
-    out_plazo = (fecha_final.year - in_fecha_curse.year) * 12 + (fecha_final.month - in_fecha_curse.month)
-    
-    # ---------------------------------------------------------
-    # Impuestos y Monto Bruto
-    # ---------------------------------------------------------
-    tasa_impuesto = min(out_plazo * tasa_impuesto_plazo, tasa_impuesto_max)
-    monto_bruto = math.ceil((in_monto_liquido + notario) / (1.0 - tasa_impuesto/100.0 - tasa_desg))
-    
-    # ---------------------------------------------------------
-    # Obtención de Datos Externos (API, CSV, TMC)
-    # ---------------------------------------------------------
-    valor_uf = obtener_uf(in_fecha_curse)
-    monto_bruto_uf = monto_bruto / valor_uf
-    
-    # Selección de TMC según tramos
-    if monto_bruto_uf <= 50: tmc = TMC_HASTA_50_UF
-    elif monto_bruto_uf <= 200: tmc = TMC_HASTA_200_UF
-    elif monto_bruto_uf <= 5000: tmc = TMC_HASTA_5000_UF
-    else: tmc = TMC_MAS_5000_UF
-
-    # Lectura de CSVs
-    spread = obtener_valor_plantilla(ruta_plantillas, in_plantilla_tasa, monto_bruto, plazo)
-    descuento_df = obtener_valor_plantilla(ruta_plantillas, in_plantilla_descuento, monto_bruto, plazo)
-    cf = obtener_costo_fondos(ruta_cf, plazo, in_resguardo_cf)
-    
-    # Cálculo de tasas
-    tasa_pizarra = (spread + cf) / 12.0
-    if tasa_pizarra >= tmc / 12.0:
-        tasa_pizarra = tmc / 12.0
-        
-    tasa = tasa_pizarra * (1.0 - descuento_df / 100.0)
-
-    # ---------------------------------------------------------
-    # Días, Tasa Diaria y Factores de Cuota
-    # ---------------------------------------------------------
+    # Días, Tasas Diarias y Factores
     calc_cuota1_acum = 1.0
     calc_cuota2_acum = 0.0
-    
     for i in range(1, len(tabla)):
-        diferencia_dias = (tabla[i]['fec_ven'] - tabla[i-1]['fec_ven']).days
-        tabla[i]['dias'] = diferencia_dias
-        tabla[i]['tasa_diaria'] = diferencia_dias * tasa / 3000.0
+        dias = (tabla[i]['fec_ven'] - tabla[i-1]['fec_ven']).days
+        tabla[i]['dias'] = dias
+        tabla[i]['tasa_diaria'] = dias * tasa_mensual_aplicada / 3000.0
         
-        # Factores
         calc_cuota1_acum = (1.0 + tabla[i]['tasa_diaria']) * calc_cuota1_acum
         calc_cuota2_acum = calc_cuota2_acum + (1.0 / calc_cuota1_acum)
-        tabla[i]['calc_cuota1'] = calc_cuota1_acum
         tabla[i]['calc_cuota2'] = calc_cuota2_acum
 
     valor_cuota = math.ceil(monto_bruto / tabla[-1]['calc_cuota2'])
 
-    # ---------------------------------------------------------
-    # Tabla de Amortización
-    # ---------------------------------------------------------
-    saldo_insoluto = float(monto_bruto)
+    # Amortización para CAE
+    saldo = float(monto_bruto)
     dias_acum = 0
+    amortizacion_total = []
     
     for i in range(1, len(tabla)):
-        intereses = round(saldo_insoluto * tasa / 100.0, 0)
+        intereses = round(saldo * tasa_mensual_aplicada / 100.0, 0)
         dias_acum += tabla[i]['dias']
-        
-        if tabla[i]['cuota'] < plazo:
-            amortizacion = valor_cuota - intereses
-            saldo_insoluto -= amortizacion
-        else:
-            amortizacion = saldo_insoluto
-            saldo_insoluto = 0.0
-            
-        tabla[i]['intereses'] = intereses
-        tabla[i]['amortizacion'] = amortizacion
-        tabla[i]['saldo_insoluto'] = saldo_insoluto
-        tabla[i]['dias_acum'] = dias_acum
+        amort = (valor_cuota - intereses) if i < in_cuotas else saldo
+        saldo -= amort
+        amortizacion_total.append((amort, dias_acum))
 
-    # ---------------------------------------------------------
-    # Indicadores Finales (CTC, CAE, etc.)
-    # ---------------------------------------------------------
-    out_impuestos = math.ceil(monto_bruto * tasa_impuesto / 100.0)
-    out_seg_desgravamen = math.ceil(monto_bruto * tasa_desg)
-    out_ctc = math.ceil(in_cuotas * valor_cuota)
-    
-    sum_dias_amort = sum(row['dias_acum'] * row['amortizacion'] for row in tabla[1:])
-    sum_amort = sum(row['amortizacion'] for row in tabla[1:])
+    # Indicadores
+    out_ctc = in_cuotas * valor_cuota
+    sum_dias_amort = sum(d * a for a, d in amortizacion_total)
+    sum_amort = sum(a for a, d in amortizacion_total)
     out_duration = (sum_dias_amort / sum_amort / 360.0) if sum_amort else 0
-    
     out_cae = 100.0 * (out_ctc - in_monto_liquido) / (in_monto_liquido * out_duration) if out_duration else 0
 
     return {
         "valor_cuota": valor_cuota,
         "monto_bruto": monto_bruto,
-        "tasa_aplicada": tasa,
+        "spread_resultante": spread_resultante,
+        "costo_fondo_historico": cf_mensual,
+        "tasa_anual": tasa_anual,
+        "tasa_mensual": tasa_mensual_aplicada,
         "cae": out_cae,
-        "costo_total_credito": out_ctc,
-        "tmc_aplicada": tmc,
-        "valor_uf_hoy": valor_uf
+        "costo_total_credito": out_ctc
     }
