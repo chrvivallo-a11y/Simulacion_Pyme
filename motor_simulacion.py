@@ -15,7 +15,7 @@ def cargar_datos_csv():
     global DATA_CACHE
     directorio_actual = os.path.dirname(__file__)
     
-    archivos = {
+archivos = {
         'comercial': '1. plantilla_comercial.csv',
         'ggee': '2. plantilla_ggee.csv',
         'perfiles': '3. plantilla_perfiles.csv',
@@ -23,7 +23,8 @@ def cargar_datos_csv():
         'canal': '5. plantilla_canal.csv',
         'seguros': '6. plantilla_seguros.csv',
         'cf': 'cf.csv',
-        'uf': 'uf.csv'
+        'uf': 'uf.csv',
+        'desgravamen': 'desgravamen_aval.csv'  # <--- NUEVO ARCHIVO
     }
     
     for clave, nombre_archivo in archivos.items():
@@ -38,8 +39,8 @@ def cargar_datos_csv():
         if not os.path.exists(ruta):
             print(f"🚨 ALERTA: No encontré el archivo {nombre_archivo} en GitHub.")
             continue
-            
-        if clave in ['cf', 'uf']:
+        
+        if clave in ['cf', 'uf', 'desgravamen']:
             try:
                 df = pd.read_csv(ruta, sep=';', engine='python')
                 if len(df.columns) < 2:
@@ -53,6 +54,37 @@ def cargar_datos_csv():
             df = df.replace({',': '.'}, regex=True).astype(float)
             df.index = df.index.astype(str)
             DATA_CACHE[clave] = df
+
+def obtener_tasa_desgravamen(cuotas: int) -> float:
+    """Obtiene la tasa por mil del desgravamen según el plazo en meses (cuotas)."""
+    try:
+        df_desg = DATA_CACHE.get('desgravamen')
+        if df_desg is None or df_desg.empty:
+            return 0.0
+        
+        # Buscamos la fila correspondiente a las cuotas
+        # Si las cuotas superan el máximo del archivo (227), tomamos el último valor
+        plazos = df_desg['plazo'].astype(int)
+        cuotas_busqueda = plazos.max() if cuotas > plazos.max() else cuotas
+            
+        fila = df_desg[df_desg['plazo'] == cuotas_busqueda]
+        
+        if not fila.empty:
+            val = fila['tasaxmil'].iloc[0]
+            if isinstance(val, str):
+                # Limpiamos el punto de miles (si existe) y cambiamos la coma decimal
+                val = float(val.replace('.', '').replace(',', '.'))
+            else:
+                val = float(val)
+                
+            # Como es "Tasa por Mil", se divide por 1000 para llevarlo a decimal
+            return val / 1000.0 
+            
+    except Exception as e:
+        print(f"Error técnico leyendo desgravamen_aval.csv: {e}")
+        
+    return 0.0
+
 
 def obtener_valor_matriz(tipo_plantilla: str, valor_fila: str, monto: float, es_plazo=False) -> float:
     """Cruza Fila (Plazo o String) vs Columna (Monto) para obtener el valor del CSV"""
@@ -144,17 +176,24 @@ def com_simulacion_pyme(
     if not DATA_CACHE:
         cargar_datos_csv()
 
+# =========================================================
     # Cálculos previos (Monto Bruto)
+    # =========================================================
     cal_chile = Chile()
     notario = 2640
     tasa_impuesto_plazo = 0.066
     tasa_impuesto_max = 0.8
-    tasa_desg = 0.0 # Si tu seguro tiene costo prima, modificar aquí
     
+    # NUEVA LÓGICA: Obtener el costo real del seguro de desgravamen
+    if in_seguro == 'DESGRAVAMEN':
+        tasa_desg = obtener_tasa_desgravamen(in_cuotas)
+    else:
+        tasa_desg = 0.0
+        
     out_plazo_aprox = in_cuotas
     tasa_impuesto = min(out_plazo_aprox * tasa_impuesto_plazo, tasa_impuesto_max)
     
-    # Es mejor buscar precios con el monto bruto, porque es el monto real financiado
+    # Magia financiera: El denominador ahora le presta la plata al cliente para pagar su seguro
     monto_bruto = math.ceil((in_monto_liquido + notario) / (1.0 - tasa_impuesto/100.0 - tasa_desg))
 
     # =========================================================
