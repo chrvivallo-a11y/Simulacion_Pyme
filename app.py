@@ -2,16 +2,17 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from dateutil.relativedelta import relativedelta
-import io
 
-# IMPORTANTE: Aquí importamos la función que creamos antes. 
-# Asegúrate de guardar el código anterior en un archivo llamado 'motor_simulacion.py'
-from motor_simulacion import com_simulacion, obtener_uf 
+# Importamos el nuevo motor de simulación pyme
+from motor_simulacion import com_simulacion_pyme, obtener_uf 
 
-# Configuración inicial de la página
-st.set_page_config(page_title="Simulador BCI - Comercial", page_icon="🏦", layout="wide")
+# ==============================================================================
+# CONFIGURACIÓN DE PÁGINA
+# ==============================================================================
+st.set_page_config(page_title="Simulador Pyme BCI", page_icon="🏦", layout="wide")
 
-st.title("🏦 Simulador de Créditos de Comercial")
+st.title("🏦 Simulador Comercial y Garantía Estatal (Pyme)")
+st.markdown("Este simulador aplica la cascada de precios: Spread Base -> Desc. Perfil -> Desc. Segmento -> % Canal -> % Seguro.")
 
 # Crear las dos pestañas (Módulos)
 tab_individual, tab_masivo = st.tabs(["👤 Simulación Individual", "📁 Simulación Masiva (Batch)"])
@@ -39,121 +40,126 @@ with tab_individual:
             value=fecha_curse + relativedelta(months=1),
             min_value=fecha_curse,
             max_value=fecha_maxima_pago,
-            help="Máximo 6 meses de holgura desde la fecha de curse."
+            help="Día hábil y mes de primer pago (Holgura de hasta 6 meses)."
         )
 
     st.markdown("---")
-    st.header("2. Datos de Simulación")
+    st.header("2. Datos de la Operación")
     
-    col_d1, col_d2 = st.columns(2)
+    col_d1, col_d2, col_d3 = st.columns(3)
+    
     with col_d1:
-        tipo_cliente = st.selectbox("Tipo de Cliente", ["Sin Garantía", "Con Garantía (FOGAPE/etc)"])
-        perfil = st.selectbox("Perfil", ["Dependiente", "Independiente", "Jubilado"])
-        segmento = st.selectbox("Segmento", ["Banca Personas", "Banca Preferencial", "Banca Privada"])
-        canal = st.selectbox("Canal de Curse", ["Digital (App/Web)", "Asistido (Sucursal)"])
+        monto = st.number_input("Monto Líquido ($)", min_value=1000000, value=10000000, step=1000000)
+        plazo = st.number_input("Plazo (Cuotas)", min_value=3, max_value=72, value=36, step=1)
+        tipo_garantia = st.selectbox("Tipo de Crédito", ["Sin Garantía (Comercial)", "Con Garantía Estatal (GGEE)"])
         
     with col_d2:
-        monto = st.number_input("Monto Líquido ($)", min_value=500000, value=5000000, step=500000)
-        plazo = st.slider("Plazo (Cuotas)", min_value=6, max_value=72, value=36, step=1)
-        resguardo_cf = st.number_input("Resguardo Costo de Fondo (%)", value=0.0, step=0.1)
-
-    # ---------------------------------------------------------
-    # LÓGICA DE NEGOCIO (Mapeo de UI a Plantillas)
-    # ---------------------------------------------------------
-    # Aquí debes definir cómo las selecciones del usuario se traducen
-    # en los nombres exactos de las plantillas de tu CSV.
-    # Esto es un ejemplo (debes ajustarlo a tu realidad comercial):
-    def obtener_nombre_plantillas(segmento, canal, tipo_cliente):
-        plantilla_tasa = 'FGPWGRUPO6$' # Valor por defecto
-        plantilla_dscto = 'DSCTFGPG6$W' # Valor por defecto
+        # Los valores de estos selectbox corresponden EXACTAMENTE a los índices de tus CSV
+        perfil = st.selectbox("Perfil de Riesgo", ["1", "2", "3", "4", "5"])
+        segmento = st.selectbox("Segmento", ["NACE", "MEDIANA", "PEQUENA", "PYME DIGITAL", "SOCIO"])
         
-        if canal == "Digital (App/Web)":
-            plantilla_dscto = 'DSCT_DIGITAL_1'
-        if segmento == "Banca Preferencial":
-            plantilla_tasa = 'TASA_PREF_01'
-            
-        return plantilla_tasa, plantilla_dscto
+    with col_d3:
+        canal = st.selectbox("Canal de Curse", ["CCDD", "ASISTIDO"])
+        seguro = st.selectbox("Seguro", ["DESGRAVAMEN", "SINSEGURO"])
 
-    plantilla_tasa_seleccionada, plantilla_dscto_seleccionada = obtener_nombre_plantillas(segmento, canal, tipo_cliente)
+    # Transformar la selección del usuario a booleano para el motor
+    es_ggee = True if "GGEE" in tipo_garantia else False
 
-    # Botón para simular
-    if st.button("🚀 Calcular Simulación", type="primary"):
-        with st.spinner("Calculando..."):
-            resultado = com_simulacion(
-                in_fecha_curse=fecha_curse,
-                in_primer_venc=fecha_primer_pago,
-                in_monto_liquido=monto,
-                in_plantilla_tasa=plantilla_tasa_seleccionada,
-                in_plantilla_descuento=plantilla_dscto_seleccionada,
-                in_cuotas=plazo,
-                in_resguardo_cf=resguardo_cf
-            )
-            
-            st.success("¡Simulación completada!")
-            
-            # Mostrar resultados en tarjetas
-            r1, r2, r3, r4 = st.columns(4)
-            r1.metric("Valor Cuota", f"${resultado['valor_cuota']:,.0f}".replace(',', '.'))
-            r2.metric("Monto Bruto", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
-            r3.metric("Tasa Aplicada", f"{resultado['tasa_aplicada']:.2f}%")
-            r4.metric("CAE", f"{resultado['cae']:.2f}%")
+    # Botón de ejecución
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🚀 Calcular Simulación", type="primary", use_container_width=True):
+        with st.spinner("Procesando cascada de precios y matriz de amortización..."):
+            try:
+                resultado = com_simulacion_pyme(
+                    in_fecha_curse=fecha_curse,
+                    in_primer_venc=fecha_primer_pago,
+                    in_monto_liquido=monto,
+                    in_cuotas=plazo,
+                    in_garantia_estatal=es_ggee,
+                    in_perfil=perfil,
+                    in_segmento=segmento,
+                    in_canal=canal,
+                    in_seguro=seguro
+                )
+                
+                st.success("¡Simulación completada con éxito!")
+                
+                # Mostrar resultados en tarjetas destacadas
+                st.subheader("Resultados Financieros")
+                r1, r2, r3, r4 = st.columns(4)
+                r1.metric("Valor Cuota Mensual", f"${resultado['valor_cuota']:,.0f}".replace(',', '.'))
+                r2.metric("Monto Bruto FInanciado", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
+                r3.metric("Costo Total del Crédito", f"${resultado['costo_total_credito']:,.0f}".replace(',', '.'))
+                r4.metric("CAE", f"{resultado['cae']:.2f}%")
+                
+                st.markdown("---")
+                st.subheader("Desglose de Tasas (Pricing)")
+                t1, t2, t3, t4 = st.columns(4)
+                t1.metric("Spread Resultante (bps)", f"{resultado['spread_resultante']:.2f}")
+                t2.metric("Costo de Fondo Histórico", f"{resultado['costo_fondo_historico']:.4f}%")
+                t3.metric("Tasa de Interés Anual", f"{resultado['tasa_anual']:.4f}%")
+                t4.metric("Tasa de Interés Mensual", f"{resultado['tasa_mensual']:.4f}%")
 
+            except Exception as e:
+                st.error(f"Ocurrió un error en el cálculo. Verifica las matrices: {e}")
 
 # ==============================================================================
 # MÓDULO 2: SIMULACIÓN MASIVA (BATCH POR CSV)
 # ==============================================================================
 with tab_masivo:
     st.header("Simulación por Lotes")
-    st.write("Sube un archivo `.csv` con los casos a simular. El archivo debe contener las columnas: `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `plantilla_tasa`, `plantilla_dscto`.")
+    st.info("Sube un archivo `.csv` con los casos a simular. Debe contener las siguientes columnas exactas: \n `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
     
-    archivo_subido = st.file_uploader("Sube tu archivo CSV aquí", type=["csv"])
+    archivo_subido = st.file_uploader("Sube tu archivo de entrada CSV aquí", type=["csv"])
     
     if archivo_subido is not None:
         try:
-            df_input = pd.read_csv(archivo_subido)
+            df_input = pd.read_csv(archivo_subido, sep=None, engine='python')
             st.write("Vista previa de los datos cargados:")
             st.dataframe(df_input.head())
             
-            if st.button("▶️ Ejecutar Simulación Masiva"):
+            if st.button("▶️ Ejecutar Simulación Masiva", type="primary"):
                 barra_progreso = st.progress(0)
                 resultados_masivos = []
                 
                 for index, row in df_input.iterrows():
-                    # Parsear fechas del CSV
                     f_curse = pd.to_datetime(row['fecha_curse']).date()
                     f_pago = pd.to_datetime(row['fecha_pago']).date()
                     
-                    # Ejecutar motor por cada fila
-                    res = com_simulacion(
+                    # Identificar si es True o False desde el CSV (Soporta 'V', 'F', 'True', 'False', 1, 0)
+                    str_ggee = str(row['es_ggee']).upper().strip()
+                    es_ggee_row = True if str_ggee in ['V', 'TRUE', '1', 'T'] else False
+                    
+                    res = com_simulacion_pyme(
                         in_fecha_curse=f_curse,
                         in_primer_venc=f_pago,
                         in_monto_liquido=int(row['monto']),
-                        in_plantilla_tasa=row['plantilla_tasa'],
-                        in_plantilla_descuento=row['plantilla_dscto'],
                         in_cuotas=int(row['plazo']),
-                        in_resguardo_cf=0.0 # O leerlo del CSV si existe
+                        in_garantia_estatal=es_ggee_row,
+                        in_perfil=str(row['perfil']),
+                        in_segmento=str(row['segmento']).upper().strip(),
+                        in_canal=str(row['canal']).upper().strip(),
+                        in_seguro=str(row['seguro']).upper().strip()
                     )
                     
-                    # Agregar el resultado a la fila original para no perder el contexto
                     fila_resultado = row.to_dict()
-                    fila_resultado.update(res)
+                    fila_resultado.update(res) # Combina los inputs originales con los outputs calculados
                     resultados_masivos.append(fila_resultado)
                     
-                    # Actualizar barra de progreso
                     barra_progreso.progress((index + 1) / len(df_input))
                 
                 df_resultados = pd.DataFrame(resultados_masivos)
-                st.success(f"Se simularon {len(df_input)} casos exitosamente.")
+                st.success(f"✅ Se simularon {len(df_input)} casos exitosamente.")
                 st.dataframe(df_resultados)
                 
-                # Convertir DF a CSV para descargar
-                csv_export = df_resultados.to_csv(index=False).encode('utf-8')
+                # Botón de Descarga
+                csv_export = df_resultados.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                 st.download_button(
                     label="📥 Descargar Resultados en CSV",
                     data=csv_export,
-                    file_name='resultados_simulacion.csv',
+                    file_name='resultados_batch_pyme.csv',
                     mime='text/csv',
                 )
                 
         except Exception as e:
-            st.error(f"Error procesando el archivo: {e}. Revisa que las columnas tengan los nombres correctos.")
+            st.error(f"Error procesando el archivo masivo. Verifica el formato de las columnas. Detalle técnico: {e}")
