@@ -93,15 +93,32 @@ def obtener_costo_fondo_historico(plazo_meses: int) -> float:
     return 0.0
 
 def obtener_uf(fecha_consulta: date) -> float:
-    """Llamada a mindicador.cl para la UF"""
+    """Obtiene el valor de la UF para una fecha específica usando mindicador.cl"""
     try:
         fecha_str = fecha_consulta.strftime('%d-%m-%Y')
-        response = requests.get(f'https://mindicador.cl/api/uf/{fecha_str}', timeout=3)
-        if response.status_code == 200 and response.json().get('serie'):
-            return float(response.json()['serie'][0]['valor'])
-    except:
-        pass
-    return 38000.0 # Fallback
+        url = f'https://mindicador.cl/api/uf/{fecha_str}'
+        
+        # ¡EL TRUCO! Disfrazar la petición de la nube como si fuera un navegador web normal
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        
+        # Aumentamos un poco el timeout a 5 segundos por si el servidor está lento
+        response = requests.get(url, headers=headers, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('serie') and len(data['serie']) > 0:
+                return float(data['serie'][0]['valor'])
+            else:
+                print(f"Advertencia: No hay datos de UF para el {fecha_str} en la API.")
+        else:
+            print(f"Error de la API: Código {response.status_code}")
+            
+    except Exception as e:
+        print(f"Error técnico consultando UF: {e}")
+        
+    return 38000.0 # Valor de respaldo (Fallback)
 
 # ==============================================================================
 # MOTOR CENTRAL DE SIMULACIÓN PYME
