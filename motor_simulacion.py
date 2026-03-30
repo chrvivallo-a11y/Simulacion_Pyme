@@ -23,14 +23,20 @@ def cargar_datos_csv():
         'canal': '5. plantilla_canal.csv',
         'seguros': '6. plantilla_seguros.csv',
         'cf': 'cf.csv',
-        'uf': 'uf.csv'  # <--- NUEVO ARCHIVO DE UF
+        'uf': 'uf.csv'
     }
     
     for clave, nombre_archivo in archivos.items():
+        # 1. Intentamos buscar el archivo en la carpeta principal (raíz)
         ruta = os.path.join(directorio_actual, nombre_archivo)
         
-        # Si el archivo no existe aún, que no explote la app
+        # 2. Si no está ahí, intentamos buscarlo dentro de una subcarpeta 'data/'
         if not os.path.exists(ruta):
+            ruta = os.path.join(directorio_actual, 'data', nombre_archivo)
+            
+        # 3. Si ya definitivamente no está en ningún lado, avisamos por consola y lo saltamos
+        if not os.path.exists(ruta):
+            print(f"🚨 ALERTA: No encontré el archivo {nombre_archivo} en GitHub.")
             continue
             
         if clave in ['cf', 'uf']:
@@ -47,7 +53,6 @@ def cargar_datos_csv():
             df = df.replace({',': '.'}, regex=True).astype(float)
             df.index = df.index.astype(str)
             DATA_CACHE[clave] = df
-
 def obtener_valor_matriz(tipo_plantilla: str, valor_fila: str, monto: float, es_plazo=False) -> float:
     """Cruza Fila (Plazo o String) vs Columna (Monto) para obtener el valor del CSV"""
     df = DATA_CACHE[tipo_plantilla]
