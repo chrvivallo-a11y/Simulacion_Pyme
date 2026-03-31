@@ -11,7 +11,7 @@ from motor_simulacion import com_simulacion_pyme, obtener_uf
 # ==============================================================================
 st.set_page_config(page_title="Simulador Pyme BCI", page_icon="🏦", layout="wide")
 
-st.title("🏦 Simulador Comercial y Garantía Estatal (Pyme)")
+st.title("🏦 Simulador Créditos Comerciales (Pyme) - BCI")
 st.markdown("Este simulador aplica la cascada de precios: Spread Base -> Desc. Perfil -> Desc. Segmento -> % Canal -> % Seguro.")
 
 # Crear las dos pestañas (Módulos)
@@ -108,7 +108,7 @@ with tab_individual:
 # ==============================================================================
 with tab_masivo:
     st.header("Simulación por Lotes")
-    st.info("Sube un archivo `.csv` con los casos a simular. Debe contener las siguientes columnas exactas: \n `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
+    st.info("Sube un archivo `.csv` con los casos a simular. Puedes incluir columnas identificadoras como `rut` o `nombre`. \n\n **Columnas obligatorias:** `rut`, `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
     
     archivo_subido = st.file_uploader("Sube tu archivo de entrada CSV aquí", type=["csv"])
     
