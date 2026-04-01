@@ -118,17 +118,45 @@ def obtener_valor_matriz(tipo_plantilla: str, valor_fila: str, monto: float, es_
     return float(df.loc[fila_seleccionada, col_seleccionada])
 
 def obtener_costo_fondo_historico(plazo_meses: int) -> float:
-    """Busca en cf.csv la fecha (periodo) más reciente y cruza con el plazo."""
-    df_cf = DATA_CACHE['cf']
-    periodo_reciente = df_cf['periodo'].max()
-    df_reciente = df_cf[df_cf['periodo'] == periodo_reciente]
-    
-    fila = df_reciente[(df_reciente['plazo_desde'] <= plazo_meses) & (df_reciente['plazo_hasta'] >= plazo_meses)]
-    if not fila.empty:
-        val = fila['cf'].iloc[0]
-        if isinstance(val, str):
-            val = float(val.replace(',', '.'))
-        return float(val)
+    """Busca el costo de fondo y le suma un colchón de liquidez a partir del tramo de 24 meses."""
+    try:
+        df_cf = DATA_CACHE['cf']
+        periodo_reciente = df_cf['periodo'].max()
+        df_reciente = df_cf[df_cf['periodo'] == periodo_reciente].copy()
+        
+        # 1. Ordenamos la tabla de menor a mayor plazo para asegurar la secuencia de tramos
+        df_reciente = df_reciente.sort_values(by='plazo_hasta').reset_index(drop=True)
+        
+        # 2. Buscamos el tramo donde cae el plazo del cliente
+        filtro = (df_reciente['plazo_desde'] <= plazo_meses) & (df_reciente['plazo_hasta'] >= plazo_meses)
+        fila_actual = df_reciente[filtro]
+        
+        if not fila_actual.empty:
+            # Obtenemos el índice (la posición de la fila) y el CF actual
+            idx_actual = fila_actual.index[0]
+            val_str = fila_actual['cf'].iloc[0]
+            cf_actual = float(str(val_str).replace(',', '.'))
+            
+            # 3. Lógica del Colchón (Solo aplica si el límite del tramo es 24 meses o más)
+            colchon = 0.0
+            plazo_hasta_actual = fila_actual['plazo_hasta'].iloc[0]
+            
+            # Verificamos que sea el tramo 24+ y que exista un tramo anterior (idx_actual > 0)
+            if plazo_hasta_actual >= 24 and idx_actual > 0:
+                # Obtenemos el CF del tramo inmediatamente anterior
+                val_ant_str = df_reciente.loc[idx_actual - 1, 'cf']
+                cf_anterior = float(str(val_ant_str).replace(',', '.'))
+                
+                # El colchón es el delta. Usamos max(0.0, ...) por si la curva de tasas se invierte.
+                diferencia = cf_actual - cf_anterior
+                colchon = max(0.0, diferencia)
+                
+            # Retornamos el Costo de Fondo original + el Colchón calculado
+            return cf_actual + colchon
+            
+    except Exception as e:
+        print(f"Error técnico calculando Costo de Fondo: {e}")
+        
     return 0.0
 
 def obtener_uf(fecha_consulta: date) -> float:
