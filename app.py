@@ -94,12 +94,23 @@ with tab_individual:
                 r5.metric("CAE (Sernac)", f"{resultado['cae_sernac']:.2f}%")
                 
                 st.markdown("---")
+                
+                # ==========================================
+                # NUEVO DESGLOSE DE TASAS (Ajustado)
+                # ==========================================
                 st.subheader("Desglose de Tasas (Pricing)")
                 t1, t2, t3, t4 = st.columns(4)
-                t1.metric("Spread Resultante (bps)", f"{resultado['spread_resultante']:.2f}")
-                t2.metric("Costo de Fondo Histórico", f"{resultado['costo_fondo_historico']:.4f}%")
-                t3.metric("Tasa de Interés Anual", f"{resultado['tasa_anual']:.4f}%")
-                t4.metric("Tasa de Interés Mensual", f"{resultado['tasa_mensual']:.4f}%")
+                
+                # El spread ahora se muestra como porcentaje a 2 decimales
+                t1.metric("Spread Resultante", f"{resultado['spread_resultante']:.2f}%")
+                
+                # El costo de fondo histórico viene mensual, lo multiplicamos por 12
+                cf_anual = resultado['costo_fondo_historico'] * 12.0
+                t2.metric("Costo de Fondo Anual", f"{cf_anual:.2f}%")
+                
+                # Tasas a 2 decimales
+                t3.metric("Tasa de Interés Anual", f"{resultado['tasa_anual']:.2f}%")
+                t4.metric("Tasa de Interés Mensual", f"{resultado['tasa_mensual']:.2f}%")
                 
                 st.markdown("---")
                 
@@ -143,7 +154,7 @@ Monto Bruto Total   : ${resultado['monto_bruto']:,.0f}
 Costo Total Credito : ${resultado['costo_total_credito']:,.0f}
 C.A.E. (Tradicional): {resultado['cae_tradicional']:.2f}%
 C.A.E. (Ley Sernac) : {resultado['cae_sernac']:.2f}%
-Tasa Mensual        : {resultado['tasa_mensual']:.4f}%
+Tasa Mensual        : {resultado['tasa_mensual']:.2f}%
 
 * Documento referencial generado por Simulador Pyme.
 =========================================
