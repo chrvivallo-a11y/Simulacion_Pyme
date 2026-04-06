@@ -313,5 +313,6 @@ def com_simulacion_pyme(
         "tasa_anual": tasa_anual,
         "tasa_mensual": tasa_mensual_aplicada,
         "cae": out_cae,
-        "costo_total_credito": out_ctc
+        "costo_total_credito": out_ctc,
+        "tabla_desarrollo": tabla  # <--- NUEVA LÍNEA AGREGADA
     }
