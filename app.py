@@ -88,17 +88,13 @@ with tab_individual:
                 st.subheader("Resultados Financieros")
                 r1, r2, r3, r4 = st.columns(4)
                 r1.metric("Valor Cuota Mensual", f"${resultado['valor_cuota']:,.0f}".replace(',', '.'))
-                r2.metric("Monto Bruto FInanciado", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
+                r2.metric("Monto Bruto Financiado", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
                 r3.metric("Costo Total del Crédito", f"${resultado['costo_total_credito']:,.0f}".replace(',', '.'))
                 r4.metric("CAE", f"{resultado['cae']:.2f}%")
                 
                 st.markdown("---")
                 st.subheader("Desglose de Tasas (Pricing)")
                 t1, t2, t3, t4 = st.columns(4)
-                t1.metric("Spread Resultante (bps)", f"{resultado['spread_resultante']:.2f}")
-                t2.metric("Costo de Fondo Histórico", f"{resultado['costo_fondo_historico']:.4f}%")
-                t3.metric("Tasa de Interés Anual", f"{resultado['tasa_anual']:.4f}%")
-                t4.metric("Tasa de Interés Mensual", f"{resultado['tasa_mensual']:.4f}%")
                 t1.metric("Spread Resultante (bps)", f"{resultado['spread_resultante']:.2f}")
                 t2.metric("Costo de Fondo Histórico", f"{resultado['costo_fondo_historico']:.4f}%")
                 t3.metric("Tasa de Interés Anual", f"{resultado['tasa_anual']:.4f}%")
@@ -173,10 +169,6 @@ Tasa Mensual        : {resultado['tasa_mensual']:.4f}%
 with tab_masivo:
     st.header("Simulación por Lotes")
     st.info("Sube un archivo `.csv` con los casos a simular. Puedes incluir columnas identificadoras como `rut` o `nombre`. \n\n **Columnas obligatorias:** `rut`, `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
-
-    with tab_masivo:
-    st.header("Simulación por Lotes")
-    st.info("Sube un archivo `.csv` con los casos a simular. Puedes incluir columnas identificadoras como `rut` o `nombre`. \n\n **Columnas obligatorias:** `rut`, `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
     
     # ==========================================
     # MEJORA 4: BOTÓN PARA DESCARGAR PLANTILLA
@@ -230,6 +222,10 @@ with tab_masivo:
                     barra_progreso.progress((index + 1) / len(df_input))
                 
                 df_resultados = pd.DataFrame(resultados_masivos)
+                # Ocultamos la columna 'tabla_desarrollo' en el reporte masivo para no saturar el CSV
+                if 'tabla_desarrollo' in df_resultados.columns:
+                    df_resultados.drop(columns=['tabla_desarrollo'], inplace=True)
+
                 st.success(f"✅ Se simularon {len(df_input)} casos exitosamente.")
                 st.dataframe(df_resultados)
                 
