@@ -162,6 +162,12 @@ def obtener_costo_fondo_historico(plazo_meses: int) -> float:
 
 def obtener_uf(fecha_consulta: date) -> float:
     """Obtiene el valor de la UF desde el archivo uf.csv en memoria."""
+    
+    # --- NUEVAS LÍNEAS: Si la memoria está vacía, carga los CSVs ---
+    if not DATA_CACHE:
+        cargar_datos_csv()
+    # ---------------------------------------------------------------
+        
     try:
         df_uf = DATA_CACHE.get('uf')
         if df_uf is None or df_uf.empty:
