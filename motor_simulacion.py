@@ -2,7 +2,8 @@ import math
 import os
 import pandas as pd
 import requests
-import streamlit as st  # <--- NUEVO: Necesario para leer los secretos
+import streamlit as st  # <--- Necesario para leer los secretos
+import numpy_financial as npf  # <--- NUEVA LIBRERÍA FINANCIERA
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from workalendar.america import Chile
@@ -299,11 +300,28 @@ def com_simulacion_pyme(
         amortizacion_total.append((amort, dias_acum))
 
     # Indicadores
+    # =========================================================
+    # INDICADORES Y CÁLCULO DE C.A.E.
+    # =========================================================
     out_ctc = in_cuotas * valor_cuota
     sum_dias_amort = sum(d * a for a, d in amortizacion_total)
     sum_amort = sum(a for a, d in amortizacion_total)
+    
+    # 1. CAE TRADICIONAL (Actuarial por Duración Media)
     out_duration = (sum_dias_amort / sum_amort / 360.0) if sum_amort else 0
-    out_cae = 100.0 * (out_ctc - in_monto_liquido) / (in_monto_liquido * out_duration) if out_duration else 0
+    cae_tradicional = 100.0 * (out_ctc - in_monto_liquido) / (in_monto_liquido * out_duration) if out_duration else 0
+
+    # 2. CAE SERNAC (Tasa Interna de Retorno - TIR)
+    # Calculamos los meses de gracia (desfase entre curse y primer pago)
+    meses_diff = (in_primer_venc.year - in_fecha_curse.year) * 12 + in_primer_venc.month - in_fecha_curse.month
+    meses_gracia = max(0, meses_diff - 1)
+    
+    # Armamos el Flujo de Caja: Monto Líquido (Positivo) y Cuotas (Negativas)
+    flujo_caja = [in_monto_liquido] + [0] * meses_gracia + [-valor_cuota] * in_cuotas
+    
+    # Calculamos la TIR, la anualizamos (* 12) y la pasamos a porcentaje (* 100)
+    tir = npf.irr(flujo_caja)
+    cae_sernac = (tir * 12.0) * 100.0 if not math.isnan(tir) else 0.0
 
     return {
         "valor_cuota": valor_cuota,
@@ -312,7 +330,8 @@ def com_simulacion_pyme(
         "costo_fondo_historico": cf_mensual,
         "tasa_anual": tasa_anual,
         "tasa_mensual": tasa_mensual_aplicada,
-        "cae": out_cae,
+        "cae_tradicional": cae_tradicional,  # <--- Mantenemos el tuyo
+        "cae_sernac": cae_sernac,            # <--- Agregamos el del SERNAC
         "costo_total_credito": out_ctc,
-        "tabla_desarrollo": tabla  # <--- NUEVA LÍNEA AGREGADA
+        "tabla_desarrollo": tabla
     }
