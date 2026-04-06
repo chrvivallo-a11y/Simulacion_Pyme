@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import time
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
@@ -199,6 +200,9 @@ with tab_masivo:
                 barra_progreso = st.progress(0)
                 resultados_masivos = []
                 
+                # ⏱️ INICIAMOS EL CRONÓMETRO AQUÍ
+                tiempo_inicio = time.time()
+                
                 for index, row in df_input.iterrows():
                     f_curse = pd.to_datetime(row['fecha_curse']).date()
                     f_pago = pd.to_datetime(row['fecha_pago']).date()
@@ -224,11 +228,22 @@ with tab_masivo:
                     
                     barra_progreso.progress((index + 1) / len(df_input))
                 
+                # ⏱️ DETENEMOS EL CRONÓMETRO Y CALCULAMOS
+                tiempo_fin = time.time()
+                segundos_totales = tiempo_fin - tiempo_inicio
+                minutos = int(segundos_totales // 60)
+                segundos = int(segundos_totales % 60)
+                
                 df_resultados = pd.DataFrame(resultados_masivos)
                 if 'tabla_desarrollo' in df_resultados.columns:
                     df_resultados.drop(columns=['tabla_desarrollo'], inplace=True)
 
-                st.success(f"✅ Se simularon {len(df_input)} casos exitosamente.")
+                # 🏆 MOSTRAMOS EL MENSAJE CON EL TIEMPO EXACTO
+                if minutos > 0:
+                    st.success(f"✅ Se simularon {len(df_input)} casos exitosamente en {minutos} min y {segundos} seg.")
+                else:
+                    st.success(f"✅ Se simularon {len(df_input)} casos exitosamente en {segundos} segundos.")
+                    
                 st.dataframe(df_resultados)
                 
                 csv_export = df_resultados.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
