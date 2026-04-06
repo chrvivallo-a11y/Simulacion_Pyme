@@ -86,7 +86,7 @@ with tab_individual:
                 
                 # Mostrar resultados en tarjetas destacadas
                 st.subheader("Resultados Financieros")
-                r1, r2, r3, r4, r5 = st.columns(5) # <--- Ahora son 5 columnas
+                r1, r2, r3, r4, r5 = st.columns(5)
                 r1.metric("Valor Cuota", f"${resultado['valor_cuota']:,.0f}".replace(',', '.'))
                 r2.metric("Monto Bruto", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
                 r3.metric("C. Total Crédito", f"${resultado['costo_total_credito']:,.0f}".replace(',', '.'))
@@ -104,28 +104,23 @@ with tab_individual:
                 st.markdown("---")
                 
                 # ==========================================
-                # MEJORA 1: EXPANDER CON TABLA DE DESARROLLO
+                # EXPANDER CON TABLA DE DESARROLLO
                 # ==========================================
                 with st.expander("📊 Ver Tabla de Desarrollo (Amortización)"):
                     if "tabla_desarrollo" in resultado:
-                        # Convertimos la lista de diccionarios en un DataFrame para que se vea lindo
                         df_tabla = pd.DataFrame(resultado["tabla_desarrollo"])
-                        
-                        # Formateamos las columnas para la vista web
                         df_tabla.rename(columns={
                             'cuota': 'N° Cuota', 'fec_ven': 'Fecha Vencimiento', 
                             'dias': 'Días', 'tasa_diaria': 'Tasa Diaria',
                             'calc_cuota1': 'Factor 1', 'calc_cuota2': 'Factor 2'
                         }, inplace=True)
-                        
                         st.dataframe(df_tabla, use_container_width=True, hide_index=True)
                     else:
                         st.warning("La tabla de desarrollo no está disponible.")
 
                 # ==========================================
-                # MEJORA 2: BOTÓN DE DESCARGA DE COTIZACIÓN
+                # BOTÓN DE DESCARGA DE COTIZACIÓN
                 # ==========================================
-                # Armamos un texto ordenado simulando un comprobante o voucher
                 cotizacion_txt = f"""
 =========================================
        COTIZACION COMERCIAL PYME
@@ -146,14 +141,13 @@ Seguro Asociado     : {seguro}
 Valor Cuota Mensual : ${resultado['valor_cuota']:,.0f}
 Monto Bruto Total   : ${resultado['monto_bruto']:,.0f}
 Costo Total Credito : ${resultado['costo_total_credito']:,.0f}
-C.A.E. (Tradicional) : {resultado['cae_tradicional']:.2f}%
-C.A.E. (Ley Sernac)  : {resultado['cae_sernac']:.2f}%
+C.A.E. (Tradicional): {resultado['cae_tradicional']:.2f}%
+C.A.E. (Ley Sernac) : {resultado['cae_sernac']:.2f}%
 Tasa Mensual        : {resultado['tasa_mensual']:.4f}%
 
 * Documento referencial generado por Simulador Pyme.
 =========================================
 """
-                # Generamos el botón de descarga en formato .txt
                 st.download_button(
                     label="📄 Descargar Cotización para el Cliente",
                     data=cotizacion_txt,
@@ -172,9 +166,6 @@ with tab_masivo:
     st.header("Simulación por Lotes")
     st.info("Sube un archivo `.csv` con los casos a simular. Puedes incluir columnas identificadoras como `rut` o `nombre`. \n\n **Columnas obligatorias:** `rut`, `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
     
-    # ==========================================
-    # MEJORA 4: BOTÓN PARA DESCARGAR PLANTILLA
-    # ==========================================
     csv_plantilla = "rut;fecha_curse;fecha_pago;monto;plazo;es_ggee;perfil;segmento;canal;seguro\n76123456-K;2026-04-01;2026-05-01;15000000;36;V;3;MEDIANA;CCDD;DESGRAVAMEN\n"
     st.download_button(
         label="📥 Descargar Plantilla CSV de Ejemplo",
@@ -184,7 +175,7 @@ with tab_masivo:
         help="Descarga un archivo con las columnas correctas listas para llenar."
     )
     
-    st.markdown("---") # Una línea divisoria visual
+    st.markdown("---") 
     archivo_subido = st.file_uploader("Sube tu archivo de entrada CSV aquí", type=["csv"])
     
     if archivo_subido is not None:
@@ -201,7 +192,6 @@ with tab_masivo:
                     f_curse = pd.to_datetime(row['fecha_curse']).date()
                     f_pago = pd.to_datetime(row['fecha_pago']).date()
                     
-                    # Identificar si es True o False desde el CSV (Soporta 'V', 'F', 'True', 'False', 1, 0)
                     str_ggee = str(row['es_ggee']).upper().strip()
                     es_ggee_row = True if str_ggee in ['V', 'TRUE', '1', 'T'] else False
                     
@@ -218,20 +208,18 @@ with tab_masivo:
                     )
                     
                     fila_resultado = row.to_dict()
-                    fila_resultado.update(res) # Combina los inputs originales con los outputs calculados
+                    fila_resultado.update(res) 
                     resultados_masivos.append(fila_resultado)
                     
                     barra_progreso.progress((index + 1) / len(df_input))
                 
                 df_resultados = pd.DataFrame(resultados_masivos)
-                # Ocultamos la columna 'tabla_desarrollo' en el reporte masivo para no saturar el CSV
                 if 'tabla_desarrollo' in df_resultados.columns:
                     df_resultados.drop(columns=['tabla_desarrollo'], inplace=True)
 
                 st.success(f"✅ Se simularon {len(df_input)} casos exitosamente.")
                 st.dataframe(df_resultados)
                 
-                # Botón de Descarga
                 csv_export = df_resultados.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                 st.download_button(
                     label="📥 Descargar Resultados en CSV",
