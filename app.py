@@ -173,7 +173,24 @@ Tasa Mensual        : {resultado['tasa_mensual']:.4f}%
 with tab_masivo:
     st.header("Simulación por Lotes")
     st.info("Sube un archivo `.csv` con los casos a simular. Puedes incluir columnas identificadoras como `rut` o `nombre`. \n\n **Columnas obligatorias:** `rut`, `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
+
+    with tab_masivo:
+    st.header("Simulación por Lotes")
+    st.info("Sube un archivo `.csv` con los casos a simular. Puedes incluir columnas identificadoras como `rut` o `nombre`. \n\n **Columnas obligatorias:** `rut`, `fecha_curse`, `fecha_pago`, `monto`, `plazo`, `es_ggee` (V/F), `perfil`, `segmento`, `canal`, `seguro`.")
     
+    # ==========================================
+    # MEJORA 4: BOTÓN PARA DESCARGAR PLANTILLA
+    # ==========================================
+    csv_plantilla = "rut;fecha_curse;fecha_pago;monto;plazo;es_ggee;perfil;segmento;canal;seguro\n76123456-K;2026-04-01;2026-05-01;15000000;36;V;3;MEDIANA;CCDD;DESGRAVAMEN\n"
+    st.download_button(
+        label="📥 Descargar Plantilla CSV de Ejemplo",
+        data=csv_plantilla.encode('utf-8-sig'),
+        file_name='plantilla_masiva_pyme.csv',
+        mime='text/csv',
+        help="Descarga un archivo con las columnas correctas listas para llenar."
+    )
+    
+    st.markdown("---") # Una línea divisoria visual
     archivo_subido = st.file_uploader("Sube tu archivo de entrada CSV aquí", type=["csv"])
     
     if archivo_subido is not None:
