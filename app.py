@@ -86,11 +86,12 @@ with tab_individual:
                 
                 # Mostrar resultados en tarjetas destacadas
                 st.subheader("Resultados Financieros")
-                r1, r2, r3, r4 = st.columns(4)
-                r1.metric("Valor Cuota Mensual", f"${resultado['valor_cuota']:,.0f}".replace(',', '.'))
-                r2.metric("Monto Bruto Financiado", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
-                r3.metric("Costo Total del Crédito", f"${resultado['costo_total_credito']:,.0f}".replace(',', '.'))
-                r4.metric("CAE", f"{resultado['cae']:.2f}%")
+                r1, r2, r3, r4, r5 = st.columns(5) # <--- Ahora son 5 columnas
+                r1.metric("Valor Cuota", f"${resultado['valor_cuota']:,.0f}".replace(',', '.'))
+                r2.metric("Monto Bruto", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
+                r3.metric("C. Total Crédito", f"${resultado['costo_total_credito']:,.0f}".replace(',', '.'))
+                r4.metric("CAE (Tradicional)", f"{resultado['cae_tradicional']:.2f}%")
+                r5.metric("CAE (Sernac)", f"{resultado['cae_sernac']:.2f}%")
                 
                 st.markdown("---")
                 st.subheader("Desglose de Tasas (Pricing)")
@@ -145,7 +146,8 @@ Seguro Asociado     : {seguro}
 Valor Cuota Mensual : ${resultado['valor_cuota']:,.0f}
 Monto Bruto Total   : ${resultado['monto_bruto']:,.0f}
 Costo Total Credito : ${resultado['costo_total_credito']:,.0f}
-C.A.E.              : {resultado['cae']:.2f}%
+C.A.E. (Tradicional) : {resultado['cae_tradicional']:.2f}%
+C.A.E. (Ley Sernac)  : {resultado['cae_sernac']:.2f}%
 Tasa Mensual        : {resultado['tasa_mensual']:.4f}%
 
 * Documento referencial generado por Simulador Pyme.
