@@ -99,6 +99,70 @@ with tab_individual:
                 t2.metric("Costo de Fondo Histórico", f"{resultado['costo_fondo_historico']:.4f}%")
                 t3.metric("Tasa de Interés Anual", f"{resultado['tasa_anual']:.4f}%")
                 t4.metric("Tasa de Interés Mensual", f"{resultado['tasa_mensual']:.4f}%")
+                t1.metric("Spread Resultante (bps)", f"{resultado['spread_resultante']:.2f}")
+                t2.metric("Costo de Fondo Histórico", f"{resultado['costo_fondo_historico']:.4f}%")
+                t3.metric("Tasa de Interés Anual", f"{resultado['tasa_anual']:.4f}%")
+                t4.metric("Tasa de Interés Mensual", f"{resultado['tasa_mensual']:.4f}%")
+                
+                st.markdown("---")
+                
+                # ==========================================
+                # MEJORA 1: EXPANDER CON TABLA DE DESARROLLO
+                # ==========================================
+                with st.expander("📊 Ver Tabla de Desarrollo (Amortización)"):
+                    if "tabla_desarrollo" in resultado:
+                        # Convertimos la lista de diccionarios en un DataFrame para que se vea lindo
+                        df_tabla = pd.DataFrame(resultado["tabla_desarrollo"])
+                        
+                        # Formateamos las columnas para la vista web
+                        df_tabla.rename(columns={
+                            'cuota': 'N° Cuota', 'fec_ven': 'Fecha Vencimiento', 
+                            'dias': 'Días', 'tasa_diaria': 'Tasa Diaria',
+                            'calc_cuota1': 'Factor 1', 'calc_cuota2': 'Factor 2'
+                        }, inplace=True)
+                        
+                        st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+                    else:
+                        st.warning("La tabla de desarrollo no está disponible.")
+
+                # ==========================================
+                # MEJORA 2: BOTÓN DE DESCARGA DE COTIZACIÓN
+                # ==========================================
+                # Armamos un texto ordenado simulando un comprobante o voucher
+                cotizacion_txt = f"""
+=========================================
+       COTIZACION COMERCIAL PYME
+=========================================
+Fecha de Simulación : {date.today().strftime('%d-%m-%Y')}
+Fecha de Curse      : {fecha_curse.strftime('%d-%m-%Y')}
+Primer Vencimiento  : {fecha_primer_pago.strftime('%d-%m-%Y')}
+
+--- DATOS DEL CREDITO ---
+Monto Líquido       : ${monto:,.0f}
+Plazo               : {plazo} cuotas
+Tipo de Garantía    : {tipo_garantia}
+Perfil / Segmento   : {perfil} / {segmento}
+Canal de Curse      : {canal}
+Seguro Asociado     : {seguro}
+
+--- RESULTADOS FINANCIEROS ---
+Valor Cuota Mensual : ${resultado['valor_cuota']:,.0f}
+Monto Bruto Total   : ${resultado['monto_bruto']:,.0f}
+Costo Total Credito : ${resultado['costo_total_credito']:,.0f}
+C.A.E.              : {resultado['cae']:.2f}%
+Tasa Mensual        : {resultado['tasa_mensual']:.4f}%
+
+* Documento referencial generado por Simulador Pyme.
+=========================================
+"""
+                # Generamos el botón de descarga en formato .txt
+                st.download_button(
+                    label="📄 Descargar Cotización para el Cliente",
+                    data=cotizacion_txt,
+                    file_name=f"Cotizacion_Pyme_${monto:,.0f}_{plazo}M.txt".replace(',', '.'),
+                    mime="text/plain",
+                    type="secondary"
+                )
 
             except Exception as e:
                 st.error(f"Ocurrió un error en el cálculo. Verifica las matrices: {e}")
