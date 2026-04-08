@@ -119,13 +119,13 @@ def obtener_valor_matriz(tipo_plantilla: str, valor_fila: str, monto: float, es_
     return float(df.loc[fila_seleccionada, col_seleccionada])
 
 def obtener_costo_fondo_historico(plazo_meses: int) -> float:
-    """Busca el costo de fondo y le suma un colchón de liquidez a partir del tramo de 24 meses."""
+    """Busca el costo de fondo. Para tramos >= 24 meses, asume el costo de fondo del tramo anterior."""
     try:
         df_cf = DATA_CACHE['cf']
         periodo_reciente = df_cf['periodo'].max()
         df_reciente = df_cf[df_cf['periodo'] == periodo_reciente].copy()
         
-        # 1. Ordenamos la tabla de menor a mayor plazo para asegurar la secuencia de tramos
+        # 1. Ordenamos la tabla de menor a mayor plazo
         df_reciente = df_reciente.sort_values(by='plazo_hasta').reset_index(drop=True)
         
         # 2. Buscamos el tramo donde cae el plazo del cliente
@@ -133,27 +133,26 @@ def obtener_costo_fondo_historico(plazo_meses: int) -> float:
         fila_actual = df_reciente[filtro]
         
         if not fila_actual.empty:
-            # Obtenemos el índice (la posición de la fila) y el CF actual
+            # Obtenemos el índice y el CF actual
             idx_actual = fila_actual.index[0]
             val_str = fila_actual['cf'].iloc[0]
             cf_actual = float(str(val_str).replace(',', '.'))
             
-            # 3. Lógica del Colchón (Solo aplica si el límite del tramo es 24 meses o más)
+            # 3. Lógica de ajuste (Descuento del delta)
             colchon = 0.0
             plazo_hasta_actual = fila_actual['plazo_hasta'].iloc[0]
             
-            # Verificamos que sea el tramo 24+ y que exista un tramo anterior (idx_actual > 0)
+            # Si es tramo 24+ y hay un tramo anterior
             if plazo_hasta_actual >= 24 and idx_actual > 0:
-                # Obtenemos el CF del tramo inmediatamente anterior
                 val_ant_str = df_reciente.loc[idx_actual - 1, 'cf']
                 cf_anterior = float(str(val_ant_str).replace(',', '.'))
                 
-                # El colchón es el delta. Usamos max(0.0, ...) por si la curva de tasas se invierte.
+                # Calculamos el delta
                 diferencia = cf_actual - cf_anterior
                 colchon = max(0.0, diferencia)
                 
-            # Retornamos el Costo de Fondo original + el Colchón calculado
-            return cf_actual + colchon
+            # 4. RETORNAMOS RESTANDO EL COLCHÓN (Equivale a usar el cf_anterior)
+            return cf_actual - colchon
             
     except Exception as e:
         print(f"Error técnico calculando Costo de Fondo: {e}")
