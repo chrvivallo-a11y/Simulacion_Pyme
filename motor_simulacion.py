@@ -210,7 +210,7 @@ def com_simulacion_pyme(
     if not DATA_CACHE:
         cargar_datos_csv()
 
-# =========================================================
+    # =========================================================
     # Cálculos previos (Monto Bruto)
     # =========================================================
     cal_chile = Chile()
@@ -229,6 +229,12 @@ def com_simulacion_pyme(
     
     # Magia financiera: El denominador ahora le presta la plata al cliente para pagar su seguro
     monto_bruto = math.ceil((in_monto_liquido + notario) / (1.0 - tasa_impuesto/100.0 - tasa_desg))
+
+    # --- NUEVO: CALCULAMOS LAS COMPONENTES EXACTAS EN PESOS ---
+    monto_impuesto = math.ceil(monto_bruto * (tasa_impuesto / 100.0))
+    monto_seguro = math.ceil(monto_bruto * tasa_desg)
+    gasto_notarial = notario
+    # -----------------------------------------------------------
 
     # =========================================================
     # CASCADA DE PRICING (Puntos 1 al 8)
@@ -329,14 +335,25 @@ def com_simulacion_pyme(
     cae_sernac = (tir * 12.0) * 100.0 if not math.isnan(tir) else 0.0
 
     return {
-        "valor_cuota": valor_cuota,
+        # --- 1. CONSTRUCCIÓN DEL MONTO (Orden Lógico) ---
+        "monto_liquido": in_monto_liquido,
+        "gasto_notarial": gasto_notarial,   
+        "monto_impuesto": monto_impuesto,   
+        "monto_seguro": monto_seguro,       
         "monto_bruto": monto_bruto,
+        
+        # --- 2. CONDICIONES FINANCIERAS ---
+        "valor_cuota": valor_cuota,
+        "tasa_mensual": tasa_mensual_aplicada,
+        "tasa_anual": tasa_anual,
         "spread_resultante": spread_resultante,
         "costo_fondo_historico": cf_mensual,
-        "tasa_anual": tasa_anual,
-        "tasa_mensual": tasa_mensual_aplicada,
-        "cae_tradicional": cae_tradicional,  # <--- Mantenemos el tuyo
-        "cae_sernac": cae_sernac,            # <--- Agregamos el del SERNAC
+        
+        # --- 3. INDICADORES TOTALES ---
+        "cae_tradicional": cae_tradicional, 
+        "cae_sernac": cae_sernac,           
         "costo_total_credito": out_ctc,
+        
+        # --- 4. DATOS INTERNOS ---
         "tabla_desarrollo": tabla
     }
