@@ -12,9 +12,12 @@ def cargar_datos_csv():
     global DATA_CACHE
     dir_actual = os.path.dirname(__file__)
     archivos = {
-        'comercial': '1. plantilla_comercial.csv', 'ggee': '2. plantilla_ggee.csv',
-        'perfiles': '3. plantilla_perfiles.csv', 'segmentos': '4. plantilla_segmentos.csv',
-        'canal': '5. plantilla_canal.csv', 'seguros': '6. plantilla_seguros.csv',
+        'comercial': '1. plantilla_comercial.csv', 
+        'ggee': '2. plantilla_ggee.csv',
+        'perfiles': '3. plantilla_perfiles.csv', 
+        'segmentos': '4. plantilla_segmentos.csv',
+        'canal': '5. plantilla_canal.csv', 
+        'seguros': '6. plantilla_seguros.csv',
         'cf': 'cf.csv', 'uf': 'uf.csv', 'desgravamen': 'desgravamen_aval.csv'
     }
     for clave, nombre in archivos.items():
@@ -60,18 +63,18 @@ def obtener_uf(fecha_consulta):
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
         f_val = df[df['fecha'] <= fecha_consulta].sort_values(by='fecha').iloc[-1]['valor']
         return float(str(f_val).replace(',', '.'))
-    except: return 39800.0
+    except: return 38000.0
 
 def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuotas, in_garantia_estatal, in_perfil, in_segmento, in_canal, in_seguro):
     if not DATA_CACHE: cargar_datos_csv()
     cal = Chile()
 
-    # 1. Gastos Iniciales y Monto Bruto
+    # 1. Monto Bruto
     t_desg = obtener_tasa_desgravamen(in_cuotas) if in_seguro == 'DESGRAVAMEN' else 0.0
     t_imp = min(in_cuotas * 0.066, 0.8)
     monto_bruto = math.ceil((in_monto_liquido + 2640) / (1.0 - t_imp/100.0 - t_desg))
 
-    # 2. Lógica de Colchón CF
+    # 2. CF y Colchón
     cf_anual_puro, colchon_anual = 0.0, 0.0
     try:
         df_cf = DATA_CACHE['cf']
@@ -79,65 +82,68 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
         df_r = df_cf[df_cf['periodo'] == per].sort_values(by='plazo_hasta').reset_index(drop=True)
         f = df_r[(df_r['plazo_desde'] <= in_cuotas) & (df_r['plazo_hasta'] >= in_cuotas)]
         if not f.empty:
-            idx = f.index[0]
             cf_m = float(str(f['cf'].iloc[0]).replace(',', '.'))
             cf_anual_puro = cf_m * 12.0
-            if f['plazo_hasta'].iloc[0] >= 24 and idx > 0:
-                cf_ant = float(str(df_r.loc[idx - 1, 'cf']).replace(',', '.'))
+            if f['plazo_hasta'].iloc[0] >= 24 and f.index[0] > 0:
+                cf_ant = float(str(df_r.loc[f.index[0] - 1, 'cf']).replace(',', '.'))
                 colchon_anual = max(0.0, (cf_m - cf_ant) * 12.0)
-    except: cf_anual_puro = 5.40
+    except: cf_anual_puro = 5.4
 
-    # 3. Cascada de Pricing (Colchón Positivo al inicio)
+    # 3. Lógica de Cascada (Nueva Consideración)
     tipo_b = 'ggee' if in_garantia_estatal else 'comercial'
-    sp_matriz = obtener_valor_matriz(tipo_b, in_cuotas, monto_bruto, True)
-    sp_base = sp_matriz + colchon_anual 
+    sp_base = obtener_valor_matriz(tipo_b, in_cuotas, monto_bruto, True)
+    sp_resultante = sp_base + colchon_anual
+    
+    cf_neto = cf_anual_puro - colchon_anual
+    tasa_res_anual = sp_resultante + cf_neto
+    
+    d_segm = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
+    tasa_p1 = tasa_res_anual + d_segm
     
     d_perf = obtener_valor_matriz('perfiles', in_perfil, monto_bruto)
-    sp_perf = sp_base + d_perf
-    d_segm = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
-    sp_segm = sp_perf + d_segm
-    p_can = obtener_valor_matriz('canal', in_canal, monto_bruto)
-    sp_can = sp_segm * (1.0 - p_can/100.0)
-    p_seg = obtener_valor_matriz('seguros', in_seguro, monto_bruto)
-    sp_fin = sp_can * (1.0 - p_seg/100.0)
+    tasa_p2 = tasa_p1 + d_perf
     
-    tasa_anual = sp_fin + (cf_anual_puro - colchon_anual)
-    tasa_mensual = tasa_anual / 12.0
+    p_can = obtener_valor_matriz('canal', in_canal, monto_bruto)
+    tasa_p3 = tasa_p2 * (1.0 - p_can/100.0)
+    
+    p_seg = obtener_valor_matriz('seguros', in_seguro, monto_bruto)
+    tasa_final_anual = tasa_p3 * (1.0 - p_seg/100.0)
+    tasa_mensual = tasa_final_anual / 12.0
 
-    # 4. Tabla de Desarrollo y Valor Cuota
+    # 4. Tabla de Desarrollo
     tabla = []
     fecha_v = in_fecha_curse
     for c in range(in_cuotas + 1):
         if c == 1: fecha_v = in_primer_venc
         elif c > 1: fecha_v = in_primer_venc + relativedelta(months=c-1)
         while not cal.is_working_day(fecha_v): fecha_v += timedelta(days=1)
-        tabla.append({'cuota': c, 'fec_ven': fecha_v, 'dias': 0, 'tasa_diaria': 0.0, 'calc_cuota1': 1.0 if c==0 else 0.0})
+        tabla.append({'cuota': c, 'fec_ven': fecha_v, 'dias': 0, 'tasa_diaria': 0.0})
 
     c1_ac, c2_ac = 1.0, 0.0
     for i in range(1, len(tabla)):
-        dias = (tabla[i]['fec_ven'] - tabla[i-1]['fec_ven']).days
-        tabla[i]['dias'] = dias
-        tabla[i]['tasa_diaria'] = (dias * tasa_mensual) / 3000.0
+        d = (tabla[i]['fec_ven'] - tabla[i-1]['fec_ven']).days
+        tabla[i]['dias'] = d
+        tabla[i]['tasa_diaria'] = (d * tasa_mensual) / 3000.0
         c1_ac *= (1.0 + tabla[i]['tasa_diaria'])
         c2_ac += (1.0 / c1_ac)
     
     valor_cuota = math.ceil(monto_bruto / c2_ac)
 
     # 5. CAE
-    flujo = [in_monto_liquido] + [0]*((in_primer_venc.year-in_fecha_curse.year)*12 + in_primer_venc.month-in_fecha_curse.month-1) + [-valor_cuota]*in_cuotas
+    flujo = [in_monto_liquido] + [-valor_cuota]*in_cuotas
     tir = npf.irr(flujo)
     cae = (tir * 12.0 * 100.0) if not math.isnan(tir) else 0.0
 
     return {
         "monto_bruto": monto_bruto, "valor_cuota": valor_cuota, "tasa_mensual": tasa_mensual,
-        "tasa_anual": tasa_anual, "cae_sernac": cae, "tabla_desarrollo": tabla,
+        "cae_sernac": cae, "tabla_desarrollo": tabla,
         "detalle_cascada": [
-            {"Concepto": "1. Spread Base (Matriz)", "Ajuste": 0, "Spread Resultante": sp_matriz},
-            {"Concepto": "2. Ajuste Colchón (+) Política", "Ajuste": colchon_anual, "Spread Resultante": sp_base},
-            {"Concepto": "3. Descuento Perfil", "Ajuste": d_perf, "Spread Resultante": sp_perf},
-            {"Concepto": "4. Descuento Segmento", "Ajuste": d_segm, "Spread Resultante": sp_segm},
-            {"Concepto": f"5. Descuento Canal ({p_can}%)", "Ajuste": -(sp_segm - sp_can), "Spread Resultante": sp_can},
-            {"Concepto": f"6. Descuento Seguro ({p_seg}%)", "Ajuste": -(sp_can - sp_fin), "Spread Resultante": sp_fin},
-            {"Concepto": "7. Costo Fondo Neto (Anual)", "Ajuste": cf_anual_puro - colchon_anual, "Spread Resultante": tasa_anual}
+            {"Concepto": "1. Spread Base", "Ajuste": None, "Valor Mensual": sp_base / 12.0},
+            {"Concepto": "2. Spread Resultante (+Colchón)", "Ajuste": colchon_anual / 12.0, "Valor Mensual": sp_resultante / 12.0},
+            {"Concepto": "3. Tasa Resultante (Inc. CF)", "Ajuste": cf_neto / 12.0, "Valor Mensual": tasa_res_anual / 12.0},
+            {"Concepto": "4. Tasa Paso 1 (Segm.)", "Ajuste": d_segm / 12.0, "Valor Mensual": tasa_p1 / 12.0},
+            {"Concepto": "5. Tasa Paso 2 (Perfil)", "Ajuste": d_perf / 12.0, "Valor Mensual": tasa_p2 / 12.0},
+            {"Concepto": "6. Tasa Paso 3 (Canal)", "Ajuste": -(tasa_p2 - tasa_p3) / 12.0, "Valor Mensual": tasa_p3 / 12.0},
+            {"Concepto": "7. TASA FINAL (Seguro)", "Ajuste": -(tasa_p3 - tasa_final_anual) / 12.0, "Valor Mensual": tasa_mensual}
         ]
     }
