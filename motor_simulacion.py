@@ -81,7 +81,7 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     t_imp = min(in_cuotas * 0.066, 0.8)
     monto_bruto = math.ceil((in_monto_liquido + 2640) / (1.0 - t_imp/100.0 - t_desg))
 
-    # 2. CF con Lógica de Tramo Anterior (100% Exacto a tu Excel)
+    # 2. CF con Lógica de Tramo Anterior 
     cf_anual_aplicado = 5.4 
     cf_mensual_viz = 5.4 / 12.0
     tramo_usado = "Fallback"
@@ -91,17 +91,14 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
         per_max = df_cf['periodo'].max()
         df_r = df_cf[df_cf['periodo'] == per_max].copy()
         
-        # Limpiar datos para evitar errores de coma vs punto
         df_r['cf'] = df_r['cf'].astype(str).str.replace(',', '.').astype(float)
         df_r = df_r.sort_values(by='plazo_desde').reset_index(drop=True)
         
-        # Encontrar en qué índice cae el plazo actual (ej: para 24, cae en el índice 1: 13-24)
         f_idx = df_r[(df_r['plazo_desde'] <= in_cuotas) & (df_r['plazo_hasta'] >= in_cuotas)].index
         
         if not f_idx.empty:
             idx = f_idx[0]
             
-            # REGLA: Si es >= 24 y no es la primera fila, saltamos un índice hacia atrás.
             if in_cuotas >= 24 and idx > 0:
                 cf_mensual_viz = df_r.loc[idx - 1, 'cf']
                 tramo_usado = f"{df_r.loc[idx - 1, 'plazo_desde']}-{df_r.loc[idx - 1, 'plazo_hasta']}m"
@@ -122,7 +119,11 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     d_segm = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
     tasa_p1 = tasa_res_anual + d_segm
     
-    d_perf = obtener_valor_matriz('perfiles', in_perfil, monto_bruto)
+    # =========================================================================
+    # NUEVA LÓGICA: Paso 4 - Descuento Perfil (Matriz mensual -> Ajuste Anual)
+    # =========================================================================
+    d_perf_mensual = obtener_valor_matriz('perfiles', in_perfil, monto_bruto)
+    d_perf = d_perf_mensual * 12.0  # Anualizamos para sumarlo a la cascada
     tasa_p2 = tasa_p1 + d_perf
     
     p_can = obtener_valor_matriz('canal', in_canal, monto_bruto)
