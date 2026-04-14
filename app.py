@@ -5,7 +5,7 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 # Importamos el motor de simulación actualizado y utilidades
-from motor_simulacion import com_simulacion_pyme, obtener_uf 
+from motor_simulacion import com_simulacion_pyme, obtener_uf
 
 # ==============================================================================
 # CONFIGURACIÓN DE PÁGINA
