@@ -237,35 +237,36 @@ def com_simulacion_pyme(
     # -----------------------------------------------------------
 
     # =========================================================
-    # CASCADA DE PRICING (Puntos 1 al 8)
+    # CASCADA DE PRICING (Puntos 1 al 8) - MODIFICADO
     # =========================================================
     
     # P1. Spread Base
     tipo_base = 'ggee' if in_garantia_estatal else 'comercial'
     spread_base = obtener_valor_matriz(tipo_base, in_cuotas, monto_bruto, es_plazo=True)
     
-    # P2 y P3. Descuentos Perfil y Segmento (Se suman, ya que en el CSV vienen negativos)
+    # P2. Ajuste por Perfil
     desc_perfil = obtener_valor_matriz('perfiles', in_perfil, monto_bruto)
+    spread_tras_perfil = spread_base + desc_perfil
+    
+    # P3. Ajuste por Segmento
     desc_segmento = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
-    spread = spread_base + desc_perfil + desc_segmento
+    spread_tras_segmento = spread_tras_perfil + desc_segmento
     
-    # P4 y P5. Descuentos Canal y Seguro (Porcentajes de descuento multiplicadores)
+    # P4. Descuento Canal
     pct_canal = obtener_valor_matriz('canal', in_canal, monto_bruto)
+    spread_tras_canal = spread_tras_segmento * (1.0 - (pct_canal / 100.0))
+    desc_canal_puntos = spread_tras_segmento - spread_tras_canal
+    
+    # P5. Descuento Seguro
     pct_seguro = obtener_valor_matriz('seguros', in_seguro, monto_bruto)
+    spread_resultante = spread_tras_canal * (1.0 - (pct_seguro / 100.0))
+    desc_seguro_puntos = spread_tras_canal - spread_resultante
     
-    # P6. Spread Resultante
-    spread_resultante = spread * (1.0 - (pct_canal / 100.0)) * (1.0 - (pct_seguro / 100.0))
-    
-    # P7. Costo de Fondo Mensual
+    # P7 y P8. Tasa Final
     cf_mensual = obtener_costo_fondo_historico(in_cuotas)
-    
-    # P8. Construcción de Tasas Finales
-    tasa_anual = spread_resultante + (cf_mensual * 12.0)
-    tasa_mensual = tasa_anual / 12.0 
-    
-    # Validación con TMC (Asumimos P02T03 standard)
-    tmc_mensual = 25.10 / 12.0 
-    tasa_mensual_aplicada = min(tasa_mensual, tmc_mensual)
+    cf_anual = cf_mensual * 12.0
+    tasa_anual = spread_resultante + cf_anual
+    tasa_mensual = tasa_anual / 12.0
 
     # =========================================================
     # GENERACIÓN DE TABLA DE AMORTIZACIÓN (Punto 9)
@@ -335,25 +336,29 @@ def com_simulacion_pyme(
     cae_sernac = (tir * 12.0) * 100.0 if not math.isnan(tir) else 0.0
 
     return {
-        # --- 1. CONSTRUCCIÓN DEL MONTO (Orden Lógico) ---
+        # --- (Datos anteriores se mantienen) ---
         "monto_liquido": in_monto_liquido,
-        "gasto_notarial": gasto_notarial,   
-        "monto_impuesto": monto_impuesto,   
-        "monto_seguro": monto_seguro,       
+        "gasto_notarial": gasto_notarial,
+        "monto_impuesto": monto_impuesto,
+        "monto_seguro": monto_seguro,
         "monto_bruto": monto_bruto,
-        
-        # --- 2. CONDICIONES FINANCIERAS ---
         "valor_cuota": valor_cuota,
         "tasa_mensual": tasa_mensual_aplicada,
         "tasa_anual": tasa_anual,
         "spread_resultante": spread_resultante,
         "costo_fondo_historico": cf_mensual,
-        
-        # --- 3. INDICADORES TOTALES ---
-        "cae_tradicional": cae_tradicional, 
-        "cae_sernac": cae_sernac,           
+        "cae_tradicional": cae_tradicional,
+        "cae_sernac": cae_sernac,
         "costo_total_credito": out_ctc,
-        
-        # --- 4. DATOS INTERNOS ---
-        "tabla_desarrollo": tabla
+        "tabla_desarrollo": tabla,
+
+        # --- NUEVO: DETALLE DE CASCADA ---
+        "detalle_cascada": [
+            {"Concepto": "1. Spread Base (Matriz)", "Ajuste": 0, "Spread Resultante": spread_base},
+            {"Concepto": "2. Descuento Perfil", "Ajuste": desc_perfil, "Spread Resultante": spread_tras_perfil},
+            {"Concepto": "3. Descuento Segmento", "Ajuste": desc_segmento, "Spread Resultante": spread_tras_segmento},
+            {"Concepto": f"4. Descuento Canal ({pct_canal}%)", "Ajuste": -desc_canal_puntos, "Spread Resultante": spread_tras_canal},
+            {"Concepto": f"5. Descuento Seguro ({pct_seguro}%)", "Ajuste": -desc_seguro_puntos, "Spread Resultante": spread_resultante},
+            {"Concepto": "6. Costo de Fondo (Anual)", "Ajuste": cf_anual, "Spread Resultante": tasa_anual}
+        ]
     }
