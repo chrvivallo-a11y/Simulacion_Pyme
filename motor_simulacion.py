@@ -25,13 +25,20 @@ def cargar_datos_csv():
         if not os.path.exists(ruta):
             ruta = os.path.join(dir_actual, 'data', nombre)
         if not os.path.exists(ruta): continue
+        
         try:
-            df = pd.read_csv(ruta, sep=None, engine='python')
-            if clave not in ['cf', 'uf', 'desgravamen']:
+            # LECTURA REFORZADA: Forzamos punto y coma para CF, UF y Desgravamen
+            if clave in ['cf', 'uf', 'desgravamen']:
+                df = pd.read_csv(ruta, sep=';', engine='python')
+                if len(df.columns) < 2:
+                    df = pd.read_csv(ruta, sep=',', engine='python')
+                DATA_CACHE[clave] = df
+            else:
+                df = pd.read_csv(ruta, sep=None, engine='python')
                 df.set_index(df.columns[0], inplace=True)
                 df = df.replace({',': '.'}, regex=True).astype(float)
                 df.index = df.index.astype(str)
-            DATA_CACHE[clave] = df
+                DATA_CACHE[clave] = df
         except: pass
 
 def obtener_tasa_desgravamen(cuotas):
@@ -74,34 +81,42 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     t_imp = min(in_cuotas * 0.066, 0.8)
     monto_bruto = math.ceil((in_monto_liquido + 2640) / (1.0 - t_imp/100.0 - t_desg))
 
-    # 2. CF con Lógica de Tramo Anterior (REPARADO)
+    # 2. CF con Lógica de Tramo Anterior (100% Exacto a tu Excel)
     cf_anual_aplicado = 5.4 
     cf_mensual_viz = 5.4 / 12.0
-    plazo_busqueda = in_cuotas # Definir siempre por defecto
+    tramo_usado = "Fallback"
     
     try:
         df_cf = DATA_CACHE['cf']
         per_max = df_cf['periodo'].max()
         df_r = df_cf[df_cf['periodo'] == per_max].copy()
-        df_r['cf'] = df_r['cf'].apply(lambda x: float(str(x).replace(',', '.')))
+        
+        # Limpiar datos para evitar errores de coma vs punto
+        df_r['cf'] = df_r['cf'].astype(str).str.replace(',', '.').astype(float)
         df_r = df_r.sort_values(by='plazo_desde').reset_index(drop=True)
         
-        if in_cuotas >= 24:
-            plazo_busqueda = 23
-            
-        filtro = (df_r['plazo_desde'] <= plazo_busqueda) & (df_r['plazo_hasta'] >= plazo_busqueda)
-        fila_encontrada = df_r[filtro]
+        # Encontrar en qué índice cae el plazo actual (ej: para 24, cae en el índice 1: 13-24)
+        f_idx = df_r[(df_r['plazo_desde'] <= in_cuotas) & (df_r['plazo_hasta'] >= in_cuotas)].index
         
-        if not fila_encontrada.empty:
-            cf_m = fila_encontrada['cf'].iloc[0]
-            cf_mensual_viz = cf_m
-            cf_anual_aplicado = cf_m * 12.0
-    except:
+        if not f_idx.empty:
+            idx = f_idx[0]
+            
+            # REGLA: Si es >= 24 y no es la primera fila, saltamos un índice hacia atrás.
+            if in_cuotas >= 24 and idx > 0:
+                cf_mensual_viz = df_r.loc[idx - 1, 'cf']
+                tramo_usado = f"{df_r.loc[idx - 1, 'plazo_desde']}-{df_r.loc[idx - 1, 'plazo_hasta']}m"
+            else:
+                cf_mensual_viz = df_r.loc[idx, 'cf']
+                tramo_usado = f"{df_r.loc[idx, 'plazo_desde']}-{df_r.loc[idx, 'plazo_hasta']}m"
+                
+            cf_anual_aplicado = cf_mensual_viz * 12.0
+    except Exception as e:
         pass
 
     # 3. Cascada de Pricing
     tipo_b = 'ggee' if in_garantia_estatal else 'comercial'
     sp_base = obtener_valor_matriz(tipo_b, in_cuotas, monto_bruto, True)
+    
     tasa_res_anual = sp_base + cf_anual_aplicado
     
     d_segm = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
@@ -115,6 +130,7 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     
     p_seg = obtener_valor_matriz('seguros', in_seguro, monto_bruto)
     tasa_final_anual = tasa_p3 * (1.0 - p_seg/100.0)
+    
     tasa_mensual = tasa_final_anual / 12.0
 
     # 4. Tabla de Desarrollo
@@ -145,8 +161,8 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
         "monto_bruto": monto_bruto, "valor_cuota": valor_cuota, "tasa_mensual": tasa_mensual,
         "cae_sernac": cae, "tabla_desarrollo": tabla,
         "detalle_cascada": [
-            {"Concepto": "1. Spread Base", "Ajuste": 0, "Valor Mensual": sp_base / 12.0},
-            {"Concepto": f"2. Tasa Inc. CF (Tramo {plazo_busqueda}m)", "Ajuste": cf_mensual_viz, "Valor Mensual": tasa_res_anual / 12.0},
+            {"Concepto": "1. Spread Base", "Ajuste": None, "Valor Mensual": sp_base / 12.0},
+            {"Concepto": f"2. Tasa Inc. CF (Tramo usado: {tramo_usado})", "Ajuste": cf_mensual_viz, "Valor Mensual": tasa_res_anual / 12.0},
             {"Concepto": "3. Tasa Paso 1 (Desc. Segmento)", "Ajuste": d_segm / 12.0, "Valor Mensual": tasa_p1 / 12.0},
             {"Concepto": "4. Tasa Paso 2 (Desc. Perfil)", "Ajuste": d_perf / 12.0, "Valor Mensual": tasa_p2 / 12.0},
             {"Concepto": f"5. Tasa Paso 3 (Desc. Canal {p_can}%)", "Ajuste": -(tasa_p2 - tasa_p3) / 12.0, "Valor Mensual": tasa_p3 / 12.0},
