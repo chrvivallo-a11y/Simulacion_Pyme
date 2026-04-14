@@ -74,28 +74,34 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     t_imp = min(in_cuotas * 0.066, 0.8)
     monto_bruto = math.ceil((in_monto_liquido + 2640) / (1.0 - t_imp/100.0 - t_desg))
 
-    # 2. CF y Colchón
-    cf_anual_puro, colchon_anual = 0.0, 0.0
+    # 2. CF con Lógica de Tramo Anterior para Plazo >= 24
+    cf_anual_aplicado = 5.4  # Valor por defecto
     try:
         df_cf = DATA_CACHE['cf']
         per = df_cf['periodo'].max()
         df_r = df_cf[df_cf['periodo'] == per].sort_values(by='plazo_hasta').reset_index(drop=True)
-        f = df_r[(df_r['plazo_desde'] <= in_cuotas) & (df_r['plazo_hasta'] >= in_cuotas)]
-        if not f.empty:
-            cf_m = float(str(f['cf'].iloc[0]).replace(',', '.'))
-            cf_anual_puro = cf_m * 12.0
-            if f['plazo_hasta'].iloc[0] >= 24 and f.index[0] > 0:
-                cf_ant = float(str(df_r.loc[f.index[0] - 1, 'cf']).replace(',', '.'))
-                colchon_anual = max(0.0, (cf_m - cf_ant) * 12.0)
-    except: cf_anual_puro = 5.4
+        
+        f_idx = df_r[(df_r['plazo_desde'] <= in_cuotas) & (df_r['plazo_hasta'] >= in_cuotas)].index
+        
+        if not f_idx.empty:
+            idx = f_idx[0]
+            # LÓGICA: Si es >= 24 meses y hay un tramo anterior, usamos el anterior
+            if in_cuotas >= 24 and idx > 0:
+                cf_m = float(str(df_r.loc[idx - 1, 'cf']).replace(',', '.'))
+            else:
+                cf_m = float(str(df_r.loc[idx, 'cf']).replace(',', '.'))
+            
+            cf_anual_aplicado = cf_m * 12.0
+    except: pass
 
-    # 3. Lógica de Cascada (Nueva Consideración)
+    # 3. Cascada de Pricing (Sin Colchón)
     tipo_b = 'ggee' if in_garantia_estatal else 'comercial'
-    sp_base = obtener_valor_matriz(tipo_b, in_cuotas, monto_bruto, True)
-    sp_resultante = sp_base + colchon_anual
     
-    cf_neto = cf_anual_puro - colchon_anual
-    tasa_res_anual = sp_resultante + cf_neto
+    # Pasos de la cascada
+    sp_base = obtener_valor_matriz(tipo_b, in_cuotas, monto_bruto, True)
+    
+    # Tasa Resultante (Spread Base + CF Aplicado)
+    tasa_res_anual = sp_base + cf_anual_aplicado
     
     d_segm = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
     tasa_p1 = tasa_res_anual + d_segm
@@ -139,11 +145,10 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
         "cae_sernac": cae, "tabla_desarrollo": tabla,
         "detalle_cascada": [
             {"Concepto": "1. Spread Base", "Ajuste": None, "Valor Mensual": sp_base / 12.0},
-            {"Concepto": "2. Spread Resultante (+Colchón)", "Ajuste": colchon_anual / 12.0, "Valor Mensual": sp_resultante / 12.0},
-            {"Concepto": "3. Tasa Resultante (Inc. CF)", "Ajuste": cf_neto / 12.0, "Valor Mensual": tasa_res_anual / 12.0},
-            {"Concepto": "4. Tasa Paso 1 (Segm.)", "Ajuste": d_segm / 12.0, "Valor Mensual": tasa_p1 / 12.0},
-            {"Concepto": "5. Tasa Paso 2 (Perfil)", "Ajuste": d_perf / 12.0, "Valor Mensual": tasa_p2 / 12.0},
-            {"Concepto": "6. Tasa Paso 3 (Canal)", "Ajuste": -(tasa_p2 - tasa_p3) / 12.0, "Valor Mensual": tasa_p3 / 12.0},
-            {"Concepto": "7. TASA FINAL (Seguro)", "Ajuste": -(tasa_p3 - tasa_final_anual) / 12.0, "Valor Mensual": tasa_mensual}
+            {"Concepto": "2. Tasa Resultante (Inc. CF Tramo)", "Ajuste": cf_anual_aplicado / 12.0, "Valor Mensual": tasa_res_anual / 12.0},
+            {"Concepto": "3. Tasa Paso 1 (Segm.)", "Ajuste": d_segm / 12.0, "Valor Mensual": tasa_p1 / 12.0},
+            {"Concepto": "4. Tasa Paso 2 (Perfil)", "Ajuste": d_perf / 12.0, "Valor Mensual": tasa_p2 / 12.0},
+            {"Concepto": "5. Tasa Paso 3 (Canal)", "Ajuste": -(tasa_p2 - tasa_p3) / 12.0, "Valor Mensual": tasa_p3 / 12.0},
+            {"Concepto": "6. TASA FINAL (Seguro)", "Ajuste": -(tasa_p3 - tasa_final_anual) / 12.0, "Valor Mensual": tasa_mensual}
         ]
     }
