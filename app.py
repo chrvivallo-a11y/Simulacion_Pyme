@@ -4,8 +4,8 @@ import time
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-# Importamos el motor de simulación actualizado y utilidades
-from motor_simulacion import com_simulacion_pyme, obtener_uf
+# Importación corregida (sin el '0' al final)
+from motor_simulacion import com_simulacion_pyme, obtener_uf 
 
 # ==============================================================================
 # CONFIGURACIÓN DE PÁGINA
@@ -29,8 +29,10 @@ with tab_individual:
         fecha_curse = st.date_input("Fecha de Curse", value=date.today())
     
     with col2:
+        # Uso de la función obtener_uf del motor
         valor_uf_actual = obtener_uf(fecha_curse)
-        st.metric(label=f"Valor UF al {fecha_curse.strftime('%d-%m-%Y')}", value=f"${valor_uf_actual:,.2f}".replace(',', '.'))
+        st.metric(label=f"Valor UF al {fecha_curse.strftime('%d-%m-%Y')}", 
+                  value=f"${valor_uf_actual:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
         
     with col3:
         fecha_maxima_pago = fecha_curse + relativedelta(months=6)
@@ -87,31 +89,28 @@ with tab_individual:
                 
                 st.markdown("---")
 
-                # ==============================================================
-                # VISUALIZACIÓN DE CASCADA DE PRICING
-                # ==============================================================
-                st.subheader("🪜 Detalle de Cascada de Pricing (Evolución de Tasa)")
+                # --- CASCADA DE PRICING ---
+                st.subheader("🪜 Detalle de Cascada de Pricing")
                 
                 if "detalle_cascada" in resultado:
                     datos_cascada = resultado["detalle_cascada"].copy()
                     
-                    # Añadimos manualmente el paso final de Tasa Mensual
-                    datos_cascada.append({
+                    # Añadir paso final de Tasa Mensual
+                    paso_final = {
                         "Concepto": "8. TASA MENSUAL APLICADA (Tasa Anual / 12)", 
                         "Ajuste": None, 
                         "Spread Resultante": resultado['tasa_mensual']
-                    })
-                    
+                    }
                     df_viz = pd.DataFrame(datos_cascada)
+                    df_viz = pd.concat([df_viz, pd.DataFrame([paso_final])], ignore_index=True)
                     
-                    # Formateo de los valores de la tabla
+                    # Formateo de columnas para la tabla
                     def formatear_ajuste(val):
                         if val is None or val == 0: return "-"
                         return f"{val:+.2f}%"
 
                     def formatear_resultante(fila):
                         val = fila["Spread Resultante"]
-                        # Si es el paso de tasa mensual, mostramos 4 decimales
                         if "MENSUAL" in fila["Concepto"]:
                             return f"**{val:.4f}%**"
                         return f"{val:.2f}%"
@@ -119,21 +118,19 @@ with tab_individual:
                     df_viz["Variación"] = df_viz["Ajuste"].apply(formatear_ajuste)
                     df_viz["Tasa / Spread"] = df_viz.apply(formatear_resultante, axis=1)
                     
-                    # Mostrar tabla estilizada
                     st.table(df_viz[["Concepto", "Variación", "Tasa / Spread"]])
                     
-                    st.info("""
-                    💡 **Nota sobre el Colchón:** Para plazos ≥ 24 meses, el beneficio de política se suma al spread inicial (+). 
-                    Esto compensa la reducción posterior en el Costo de Fondo Neto, manteniendo la integridad del margen comercial.
-                    """)
+                    if plazo >= 24:
+                        st.info("💡 **Nota:** Se aplicó un ajuste de colchón positivo por política de plazo (≥ 24 cuotas).")
                 
-                st.markdown("---")
-                
-                # Tabla de Desarrollo
+                # --- TABLA DE DESARROLLO ---
                 with st.expander("📊 Ver Tabla de Desarrollo (Amortización)"):
                     if "tabla_desarrollo" in resultado:
                         df_tabla = pd.DataFrame(resultado["tabla_desarrollo"])
-                        st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+                        # Limpieza para mostrar
+                        if not df_tabla.empty:
+                            st.dataframe(df_tabla[["cuota", "fec_ven", "dias", "tasa_diaria"]], 
+                                         use_container_width=True, hide_index=True)
 
             except Exception as e:
                 st.error(f"Error técnico en el cálculo: {e}")
@@ -143,9 +140,9 @@ with tab_individual:
 # ==============================================================================
 with tab_masivo:
     st.header("Simulación por Lotes")
-    st.info("Sube un archivo CSV con las columnas: rut, fecha_curse, fecha_pago, monto, plazo, es_ggee, perfil, segmento, canal, seguro.")
+    st.info("Sube un CSV con: rut, fecha_curse, fecha_pago, monto, plazo, es_ggee, perfil, segmento, canal, seguro.")
     
-    archivo_subido = st.file_uploader("Sube tu archivo CSV aquí", type=["csv"])
+    archivo_subido = st.file_uploader("Sube tu archivo CSV", type=["csv"])
     
     if archivo_subido is not None:
         try:
@@ -167,14 +164,21 @@ with tab_masivo:
                         in_seguro=str(row['seguro']).upper().strip()
                     )
                     fila = row.to_dict()
-                    # Excluimos objetos pesados de la exportación CSV
-                    fila.update({k: v for k, v in res.items() if k not in ['tabla_desarrollo', 'detalle_cascada']})
+                    fila.update({
+                        "monto_bruto": res["monto_bruto"],
+                        "valor_cuota": res["valor_cuota"],
+                        "tasa_anual": res["tasa_anual"],
+                        "tasa_mensual": res["tasa_mensual"],
+                        "cae": res["cae_sernac"]
+                    })
                     resultados_masivos.append(fila)
                     barra.progress((index + 1) / len(df_input))
                 
                 df_res = pd.DataFrame(resultados_masivos)
                 st.success(f"Procesados {len(df_res)} casos.")
                 st.dataframe(df_res)
-                st.download_button("📥 Descargar Resultados", df_res.to_csv(index=False, sep=';').encode('utf-8'), "resultados_simulacion.csv")
+                st.download_button("📥 Descargar Resultados", 
+                                   df_res.to_csv(index=False, sep=';').encode('utf-8'), 
+                                   "resultados_simulacion.csv")
         except Exception as e:
             st.error(f"Error en proceso masivo: {e}")
