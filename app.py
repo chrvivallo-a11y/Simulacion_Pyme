@@ -4,7 +4,7 @@ import time
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-# Importación corregida (sin el '0' al final)
+# Importación desde tu archivo motor_simulacion.py
 from motor_simulacion import com_simulacion_pyme, obtener_uf 
 
 # ==============================================================================
@@ -13,7 +13,10 @@ from motor_simulacion import com_simulacion_pyme, obtener_uf
 st.set_page_config(page_title="Simulador Pyme BCI", page_icon="🏦", layout="wide")
 
 st.title("🏦 Simulador Créditos Comerciales (Pyme) - BCI")
-st.markdown("Cálculo con Cascada de Pricing: Spread Base -> **Ajuste Colchón (+)** -> Descuentos -> Costo Fondo -> Tasa Mensual.")
+st.markdown("""
+Esta versión utiliza la **Cascada de Pricing Mensualizada**: 
+1. Spread Base → 2. Ajuste Colchón (+) → 3. Inclusión CF (Paso a Tasa) → 4. Desc. Segmento → 5. Desc. Perfil → 6. % Canal → 7. % Seguro.
+""")
 
 # Crear las dos pestañas (Módulos)
 tab_individual, tab_masivo = st.tabs(["👤 Simulación Individual", "📁 Simulación Masiva (Batch)"])
@@ -29,7 +32,6 @@ with tab_individual:
         fecha_curse = st.date_input("Fecha de Curse", value=date.today())
     
     with col2:
-        # Uso de la función obtener_uf del motor
         valor_uf_actual = obtener_uf(fecha_curse)
         st.metric(label=f"Valor UF al {fecha_curse.strftime('%d-%m-%Y')}", 
                   value=f"${valor_uf_actual:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
@@ -40,7 +42,8 @@ with tab_individual:
             "Fecha Primer Pago", 
             value=fecha_curse + relativedelta(months=1),
             min_value=fecha_curse,
-            max_value=fecha_maxima_pago
+            max_value=fecha_maxima_pago,
+            help="Día hábil y mes de primer pago (Holgura de hasta 6 meses)."
         )
 
     st.markdown("---")
@@ -64,7 +67,7 @@ with tab_individual:
     es_ggee = "GGEE" in tipo_garantia
 
     if st.button("🚀 Calcular Simulación", type="primary", use_container_width=True):
-        with st.spinner("Procesando cascada de precios..."):
+        with st.spinner("Procesando cascada de precios mensualizada..."):
             try:
                 resultado = com_simulacion_pyme(
                     in_fecha_curse=fecha_curse,
@@ -78,80 +81,71 @@ with tab_individual:
                     in_seguro=seguro
                 )
                 
-                st.success("¡Simulación completada con éxito!")
+                st.success("¡Simulación completada!")
                 
-                # --- MÉTRICAS PRINCIPALES ---
+                # --- RESULTADOS PRINCIPALES ---
                 r1, r2, r3, r4 = st.columns(4)
                 r1.metric("Valor Cuota", f"${resultado['valor_cuota']:,.0f}".replace(',', '.'))
                 r2.metric("Monto Bruto", f"${resultado['monto_bruto']:,.0f}".replace(',', '.'))
-                r3.metric("Tasa Mensual", f"{resultado['tasa_mensual']:.4f}%")
+                r3.metric("Tasa Mensual Final", f"{resultado['tasa_mensual']:.4f}%")
                 r4.metric("CAE (Sernac)", f"{resultado['cae_sernac']:.2f}%")
                 
                 st.markdown("---")
 
-                # --- CASCADA DE PRICING ---
-                st.subheader("🪜 Detalle de Cascada de Pricing")
+                # ==============================================================
+                # CASCADA DE PRICING (VISUALIZACIÓN MENSUAL)
+                # ==============================================================
+                st.subheader("🪜 Detalle de Cascada de Pricing (Tasas Mensuales)")
                 
                 if "detalle_cascada" in resultado:
-                    datos_cascada = resultado["detalle_cascada"].copy()
+                    df_cascada = pd.DataFrame(resultado["detalle_cascada"])
                     
-                    # Añadir paso final de Tasa Mensual
-                    paso_final = {
-                        "Concepto": "8. TASA MENSUAL APLICADA (Tasa Anual / 12)", 
-                        "Ajuste": None, 
-                        "Spread Resultante": resultado['tasa_mensual']
-                    }
-                    df_viz = pd.DataFrame(datos_cascada)
-                    df_viz = pd.concat([df_viz, pd.DataFrame([paso_final])], ignore_index=True)
+                    # Formatear columnas para la tabla
+                    df_viz = df_cascada.copy()
                     
-                    # Formateo de columnas para la tabla
-                    def formatear_ajuste(val):
-                        if val is None or val == 0: return "-"
-                        return f"{val:+.2f}%"
+                    def formatear_variacion(x):
+                        if x is None or x == 0: return "-"
+                        return f"{x:+.4f}%"
 
-                    def formatear_resultante(fila):
-                        val = fila["Spread Resultante"]
-                        if "MENSUAL" in fila["Concepto"]:
-                            return f"**{val:.4f}%**"
-                        return f"{val:.2f}%"
-
-                    df_viz["Variación"] = df_viz["Ajuste"].apply(formatear_ajuste)
-                    df_viz["Tasa / Spread"] = df_viz.apply(formatear_resultante, axis=1)
+                    df_viz["Variación (Mes)"] = df_viz["Ajuste"].apply(formatear_variacion)
+                    df_viz["Tasa Paso (Mes)"] = df_viz["Valor Mensual"].apply(lambda x: f"**{x:.4f}%**")
                     
-                    st.table(df_viz[["Concepto", "Variación", "Tasa / Spread"]])
+                    st.table(df_viz[["Concepto", "Variación (Mes)", "Tasa Paso (Mes)"]])
                     
-                    if plazo >= 24:
-                        st.info("💡 **Nota:** Se aplicó un ajuste de colchón positivo por política de plazo (≥ 24 cuotas).")
+                    st.caption("Nota: Los pasos 1 y 2 operan sobre el Spread. A partir del paso 3, el Costo de Fondo se integra y el valor se convierte en Tasa.")
+                
+                st.markdown("---")
                 
                 # --- TABLA DE DESARROLLO ---
                 with st.expander("📊 Ver Tabla de Desarrollo (Amortización)"):
                     if "tabla_desarrollo" in resultado:
                         df_tabla = pd.DataFrame(resultado["tabla_desarrollo"])
-                        # Limpieza para mostrar
-                        if not df_tabla.empty:
-                            st.dataframe(df_tabla[["cuota", "fec_ven", "dias", "tasa_diaria"]], 
-                                         use_container_width=True, hide_index=True)
+                        # Formatear fechas para mejor lectura
+                        df_tabla["fec_ven"] = pd.to_datetime(df_tabla["fec_ven"]).dt.strftime('%d-%m-%Y')
+                        st.dataframe(df_tabla, use_container_width=True, hide_index=True)
 
             except Exception as e:
-                st.error(f"Error técnico en el cálculo: {e}")
+                st.error(f"Error en el cálculo: {e}")
 
 # ==============================================================================
 # MÓDULO 2: SIMULACIÓN MASIVA (BATCH)
 # ==============================================================================
 with tab_masivo:
     st.header("Simulación por Lotes")
-    st.info("Sube un CSV con: rut, fecha_curse, fecha_pago, monto, plazo, es_ggee, perfil, segmento, canal, seguro.")
+    st.info("Sube un archivo .csv para procesar múltiples simulaciones simultáneamente.")
     
-    archivo_subido = st.file_uploader("Sube tu archivo CSV", type=["csv"])
+    archivo_subido = st.file_uploader("Sube tu archivo de entrada CSV", type=["csv"])
     
     if archivo_subido is not None:
         try:
             df_input = pd.read_csv(archivo_subido, sep=None, engine='python')
+            
             if st.button("▶️ Ejecutar Simulación Masiva", type="primary"):
-                barra = st.progress(0)
+                barra_progreso = st.progress(0)
                 resultados_masivos = []
                 
                 for index, row in df_input.iterrows():
+                    # Ejecutar motor por cada fila
                     res = com_simulacion_pyme(
                         in_fecha_curse=pd.to_datetime(row['fecha_curse']).date(),
                         in_primer_venc=pd.to_datetime(row['fecha_pago']).date(),
@@ -163,22 +157,30 @@ with tab_masivo:
                         in_canal=str(row['canal']).upper().strip(),
                         in_seguro=str(row['seguro']).upper().strip()
                     )
-                    fila = row.to_dict()
-                    fila.update({
+                    
+                    # Consolidar datos de entrada con resultados clave
+                    fila_res = row.to_dict()
+                    fila_res.update({
                         "monto_bruto": res["monto_bruto"],
                         "valor_cuota": res["valor_cuota"],
-                        "tasa_anual": res["tasa_anual"],
                         "tasa_mensual": res["tasa_mensual"],
                         "cae": res["cae_sernac"]
                     })
-                    resultados_masivos.append(fila)
-                    barra.progress((index + 1) / len(df_input))
+                    resultados_masivos.append(fila_res)
+                    barra_progreso.progress((index + 1) / len(df_input))
                 
-                df_res = pd.DataFrame(resultados_masivos)
-                st.success(f"Procesados {len(df_res)} casos.")
-                st.dataframe(df_res)
-                st.download_button("📥 Descargar Resultados", 
-                                   df_res.to_csv(index=False, sep=';').encode('utf-8'), 
-                                   "resultados_simulacion.csv")
+                df_final = pd.DataFrame(resultados_masivos)
+                st.success(f"✅ Se procesaron {len(df_final)} casos con éxito.")
+                st.dataframe(df_final)
+                
+                # Botón de descarga
+                csv_data = df_final.to_csv(index=False, sep=';').encode('utf-8')
+                st.download_button(
+                    label="📥 Descargar Resultados en CSV",
+                    data=csv_data,
+                    file_name=f"Batch_Resultados_{date.today()}.csv",
+                    mime="text/csv"
+                )
+                
         except Exception as e:
-            st.error(f"Error en proceso masivo: {e}")
+            st.error(f"Error procesando el archivo masivo: {e}")
