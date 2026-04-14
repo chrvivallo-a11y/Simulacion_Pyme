@@ -74,27 +74,21 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     t_imp = min(in_cuotas * 0.066, 0.8)
     monto_bruto = math.ceil((in_monto_liquido + 2640) / (1.0 - t_imp/100.0 - t_desg))
 
-    # 2. CF con Lógica de Tramo Anterior EXPLÍCITA
-    cf_anual_aplicado = 0.0
-    cf_mensual_viz = 0.0
+    # 2. CF con Lógica de Tramo Anterior (REPARADO)
+    cf_anual_aplicado = 5.4 
+    cf_mensual_viz = 5.4 / 12.0
+    plazo_busqueda = in_cuotas # Definir siempre por defecto
     
     try:
         df_cf = DATA_CACHE['cf']
         per_max = df_cf['periodo'].max()
         df_r = df_cf[df_cf['periodo'] == per_max].copy()
-        
-        # Limpieza de valores CF (asegurar que sean float)
         df_r['cf'] = df_r['cf'].apply(lambda x: float(str(x).replace(',', '.')))
         df_r = df_r.sort_values(by='plazo_desde').reset_index(drop=True)
         
-        # BUSQUEDA EXPLÍCITA
-        plazo_busqueda = in_cuotas
-        
-        # REGLA: Si el plazo es >= 24, buscamos el valor que corresponde a 23 meses (tramo anterior)
         if in_cuotas >= 24:
             plazo_busqueda = 23
             
-        # Filtramos el tramo correcto para el plazo de búsqueda
         filtro = (df_r['plazo_desde'] <= plazo_busqueda) & (df_r['plazo_hasta'] >= plazo_busqueda)
         fila_encontrada = df_r[filtro]
         
@@ -102,14 +96,8 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
             cf_m = fila_encontrada['cf'].iloc[0]
             cf_mensual_viz = cf_m
             cf_anual_aplicado = cf_m * 12.0
-        else:
-            # Si no encuentra (ej. plazo muy largo), toma el último disponible
-            cf_m = df_r['cf'].iloc[-1]
-            cf_mensual_viz = cf_m
-            cf_anual_aplicado = cf_m * 12.0
-            
     except:
-        cf_anual_aplicado = 5.4 
+        pass
 
     # 3. Cascada de Pricing
     tipo_b = 'ggee' if in_garantia_estatal else 'comercial'
@@ -127,7 +115,6 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     
     p_seg = obtener_valor_matriz('seguros', in_seguro, monto_bruto)
     tasa_final_anual = tasa_p3 * (1.0 - p_seg/100.0)
-    
     tasa_mensual = tasa_final_anual / 12.0
 
     # 4. Tabla de Desarrollo
@@ -159,7 +146,7 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
         "cae_sernac": cae, "tabla_desarrollo": tabla,
         "detalle_cascada": [
             {"Concepto": "1. Spread Base", "Ajuste": 0, "Valor Mensual": sp_base / 12.0},
-            {"Concepto": f"2. Tasa Inc. CF (Tramo {plazo_busqueda if in_cuotas >= 24 else in_cuotas}m)", "Ajuste": cf_mensual_viz, "Valor Mensual": tasa_res_anual / 12.0},
+            {"Concepto": f"2. Tasa Inc. CF (Tramo {plazo_busqueda}m)", "Ajuste": cf_mensual_viz, "Valor Mensual": tasa_res_anual / 12.0},
             {"Concepto": "3. Tasa Paso 1 (Desc. Segmento)", "Ajuste": d_segm / 12.0, "Valor Mensual": tasa_p1 / 12.0},
             {"Concepto": "4. Tasa Paso 2 (Desc. Perfil)", "Ajuste": d_perf / 12.0, "Valor Mensual": tasa_p2 / 12.0},
             {"Concepto": f"5. Tasa Paso 3 (Desc. Canal {p_can}%)", "Ajuste": -(tasa_p2 - tasa_p3) / 12.0, "Valor Mensual": tasa_p3 / 12.0},
