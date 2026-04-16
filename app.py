@@ -104,10 +104,11 @@ with tab_masivo:
         El archivo debe contener **exactamente** las siguientes cabeceras (la primera fila) y respetar los formatos permitidos:
         """)
         
+        # AGREGADO: Columna RUT
         diccionario = pd.DataFrame({
-            "Nombre Columna": ["fecha_curse", "fecha_pago", "monto", "plazo", "es_ggee", "perfil", "segmento", "canal", "seguro"],
-            "Descripción": ["Fecha de otorgamiento", "Fecha primer venc.", "Monto Líquido", "Cantidad de cuotas", "¿Tiene Garantía Estatal?", "Perfil de Riesgo", "Segmento comercial", "Canal de curse", "Seguro asociado"],
-            "Valores Permitidos": ["YYYY-MM-DD", "YYYY-MM-DD", "Entero", "Entero", "TRUE o FALSE", "1 al 8", "NACE, MEDIANA, PEQUENA, etc.", "CCDD o ASISTIDO", "DESGRAVAMEN o SINSEGURO"]
+            "Nombre Columna": ["rut", "fecha_curse", "fecha_pago", "monto", "plazo", "es_ggee", "perfil", "segmento", "canal", "seguro"],
+            "Descripción": ["RUT del cliente", "Fecha de otorgamiento", "Fecha primer venc.", "Monto Líquido", "Cantidad de cuotas", "¿Tiene Garantía Estatal?", "Perfil de Riesgo", "Segmento comercial", "Canal de curse", "Seguro asociado"],
+            "Valores Permitidos": ["Texto (ej: 12345678-9)", "YYYY-MM-DD", "YYYY-MM-DD", "Entero", "Entero", "TRUE o FALSE", "1 al 8", "NACE, MEDIANA, PEQUENA, etc.", "CCDD o ASISTIDO", "DESGRAVAMEN o SINSEGURO"]
         })
         st.table(diccionario)
         
@@ -128,7 +129,8 @@ with tab_masivo:
         try:
             df_in = pd.read_csv(up, sep=None, engine='python')
             
-            columnas_requeridas = ["fecha_curse", "fecha_pago", "monto", "plazo", "es_ggee", "perfil", "segmento", "canal", "seguro"]
+            # AGREGADO: Validación de la columna RUT
+            columnas_requeridas = ["rut", "fecha_curse", "fecha_pago", "monto", "plazo", "es_ggee", "perfil", "segmento", "canal", "seguro"]
             columnas_faltantes = [col for col in columnas_requeridas if col not in df_in.columns]
             
             if columnas_faltantes:
@@ -164,6 +166,7 @@ with tab_masivo:
                                 in_seguro=str(row['seguro']).upper().strip()
                             )
                             
+                            # Al hacer row.to_dict(), ¡ahora el RUT viaja automáticamente junto con todos los demás datos iniciales!
                             fila = row.to_dict()
                             fila.update({
                                 "monto_bruto_res": r["monto_bruto"], 
