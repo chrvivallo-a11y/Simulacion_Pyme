@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import time
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
@@ -97,29 +98,25 @@ with tab_masivo:
     st.header("📁 Simulación por Lotes (Masiva)")
     
     # --- CARÁTULA / INSTRUCCIONES ---
-    with st.expander("ℹ️ Instrucciones y Formato del Archivo CSV (Carátula)", expanded=True):
+    with st.expander("ℹ️ Instrucciones y Formato del Archivo CSV", expanded=False):
         st.markdown("""
         Para realizar simulaciones masivas, debes subir un archivo **.csv**. 
         El archivo debe contener **exactamente** las siguientes cabeceras (la primera fila) y respetar los formatos permitidos:
         """)
         
-        # Tabla de Diccionario de Datos
         diccionario = pd.DataFrame({
             "Nombre Columna": ["fecha_curse", "fecha_pago", "monto", "plazo", "es_ggee", "perfil", "segmento", "canal", "seguro"],
-            "Descripción": ["Fecha de otorgamiento", "Fecha del primer vencimiento", "Monto Líquido a solicitar", "Cantidad de cuotas", "¿Tiene Garantía Estatal?", "Perfil de Riesgo del cliente", "Segmento comercial", "Canal de curse", "Seguro asociado"],
-            "Formato / Valores Permitidos": ["YYYY-MM-DD", "YYYY-MM-DD", "Número entero (ej: 10000000)", "Número entero (ej: 24)", "TRUE o FALSE", "1, 2, 3, 4, 5, 6, 7 u 8", "NACE, MEDIANA, PEQUENA, PYME DIGITAL, SOCIO", "CCDD o ASISTIDO", "DESGRAVAMEN o SINSEGURO"]
+            "Descripción": ["Fecha de otorgamiento", "Fecha primer venc.", "Monto Líquido", "Cantidad de cuotas", "¿Tiene Garantía Estatal?", "Perfil de Riesgo", "Segmento comercial", "Canal de curse", "Seguro asociado"],
+            "Valores Permitidos": ["YYYY-MM-DD", "YYYY-MM-DD", "Entero", "Entero", "TRUE o FALSE", "1 al 8", "NACE, MEDIANA, PEQUENA, etc.", "CCDD o ASISTIDO", "DESGRAVAMEN o SINSEGURO"]
         })
         st.table(diccionario)
         
-        # Generar botón para descargar plantilla vacía
         plantilla_df = pd.DataFrame(columns=diccionario["Nombre Columna"].tolist())
-        csv_plantilla = plantilla_df.to_csv(index=False, sep=';').encode('utf-8-sig')
         st.download_button(
             label="📥 Descargar Plantilla CSV Vacía",
-            data=csv_plantilla,
+            data=plantilla_df.to_csv(index=False, sep=';').encode('utf-8-sig'),
             file_name="plantilla_simulacion_masiva.csv",
-            mime="text/csv",
-            help="Descarga un archivo CSV con las cabeceras listas para ser llenadas."
+            mime="text/csv"
         )
 
     st.markdown("---")
@@ -131,7 +128,6 @@ with tab_masivo:
         try:
             df_in = pd.read_csv(up, sep=None, engine='python')
             
-            # Verificación rápida de cabeceras
             columnas_requeridas = ["fecha_curse", "fecha_pago", "monto", "plazo", "es_ggee", "perfil", "segmento", "canal", "seguro"]
             columnas_faltantes = [col for col in columnas_requeridas if col not in df_in.columns]
             
@@ -140,13 +136,20 @@ with tab_masivo:
             else:
                 st.success(f"Archivo cargado correctamente con {len(df_in)} registros.")
                 
+                # --- VISTA PREVIA ---
+                st.write("👀 **Vista previa de los primeros 5 casos a procesar:**")
+                st.dataframe(df_in.head())
+                
                 if st.button("▶️ Iniciar Procesamiento de Lote", type="primary"):
+                    
+                    # --- INICIO DEL CRONÓMETRO ---
+                    start_time = time.time()
+                    
                     results = []
                     bar = st.progress(0)
                     
                     for i, row in df_in.iterrows():
                         try:
-                            # Aseguramos limpieza en los booleanos y strings
                             es_ggee_val = str(row['es_ggee']).upper().strip() in ['TRUE', '1', 'V', 'SI']
                             
                             r = com_simulacion_pyme(
@@ -162,7 +165,6 @@ with tab_masivo:
                             )
                             
                             fila = row.to_dict()
-                            # Añadir resultados del motor
                             fila.update({
                                 "monto_bruto_res": r["monto_bruto"], 
                                 "valor_cuota_res": r["valor_cuota"], 
@@ -171,15 +173,18 @@ with tab_masivo:
                             })
                             results.append(fila)
                         except Exception as fila_err:
-                            # Si una fila falla, la guardamos con error para no detener todo el proceso
                             fila_error = row.to_dict()
                             fila_error.update({"monto_bruto_res": "ERROR", "valor_cuota_res": str(fila_err)})
                             results.append(fila_error)
                             
                         bar.progress((i+1)/len(df_in))
                     
+                    # --- FIN DEL CRONÓMETRO ---
+                    end_time = time.time()
+                    tiempo_transcurrido = end_time - start_time
+                    
                     df_out = pd.DataFrame(results)
-                    st.success("✅ Procesamiento masivo completado.")
+                    st.success(f"✅ Procesamiento masivo completado en **{tiempo_transcurrido:.2f} segundos**.")
                     st.dataframe(df_out)
                     
                     st.download_button(
