@@ -151,14 +151,14 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     cae = (tir * 12.0 * 100.0) if not math.isnan(tir) else 0.0
 
     return {
-        \"monto_bruto\": monto_bruto, \"valor_cuota\": valor_cuota, \"tasa_mensual\": tasa_mensual,
-        \"cae_sernac\": cae, \"tabla_desarrollo\": tabla,
-        \"detalle_cascada\": [
-            {\"Concepto\": \"1. Spread Base\", \"Ajuste\": None, \"Valor Mensual\": sp_base / 12.0},
-            {\"Concepto\": f\"2. Tasa Inc. CF (Tramo usado: {tramo_usado})\", \"Ajuste\": cf_mensual_viz, \"Valor Mensual\": tasa_res_anual / 12.0},
-            {\"Concepto\": \"3. Tasa Paso 1 (Desc. Segmento)\", \"Ajuste\": d_segm / 12.0, \"Valor Mensual\": tasa_p1 / 12.0},
-            {\"Concepto\": \"4. Tasa Paso 2 (Desc. Perfil)\", \"Ajuste\": d_perf / 12.0, \"Valor Mensual\": tasa_p2 / 12.0},
-            {\"Concepto\": f\"5. Tasa Paso 3 (Desc. Canal {p_can}%)\", \"Ajuste\": -(tasa_p2 - tasa_p3) / 12.0, \"Valor Mensual\": tasa_p3 / 12.0},
-            {\"Concepto\": f\"6. TASA FINAL (Desc. Seguro {p_seg}%)\", \"Ajuste\": -(tasa_p3 - tasa_final_anual) / 12.0, \"Valor Mensual\": tasa_mensual}
+        "monto_bruto": monto_bruto, "valor_cuota": valor_cuota, "tasa_mensual": tasa_mensual,
+        "cae_sernac": cae, "tabla_desarrollo": tabla,
+        "detalle_cascada": [
+            {"Concepto": "1. Spread Base", "Ajuste": None, "Valor Mensual": sp_base / 12.0},
+            {"Concepto": f"2. Tasa Inc. CF (Tramo usado: {tramo_usado})", "Ajuste": cf_mensual_viz, "Valor Mensual": tasa_res_anual / 12.0},
+            {"Concepto": "3. Tasa Paso 1 (Desc. Segmento)", "Ajuste": d_segm / 12.0, "Valor Mensual": tasa_p1 / 12.0},
+            {"Concepto": "4. Tasa Paso 2 (Desc. Perfil)", "Ajuste": d_perf / 12.0, "Valor Mensual": tasa_p2 / 12.0},
+            {"Concepto": f"5. Tasa Paso 3 (Desc. Canal {p_can}%)", "Ajuste": -(tasa_p2 - tasa_p3) / 12.0, "Valor Mensual": tasa_p3 / 12.0},
+            {"Concepto": f"6. TASA FINAL (Desc. Seguro {p_seg}%)", "Ajuste": -(tasa_p3 - tasa_final_anual) / 12.0, "Valor Mensual": tasa_mensual}
         ]
     }
