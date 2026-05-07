@@ -27,7 +27,6 @@ def cargar_datos_csv():
         if not os.path.exists(ruta): continue
         
         try:
-            # LECTURA REFORZADA: Forzamos punto y coma para CF, UF y Desgravamen
             if clave in ['cf', 'uf', 'desgravamen']:
                 df = pd.read_csv(ruta, sep=';', engine='python')
                 if len(df.columns) < 2:
@@ -81,7 +80,7 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     t_imp = min(in_cuotas * 0.066, 0.8)
     monto_bruto = math.ceil((in_monto_liquido + 2640) / (1.0 - t_imp/100.0 - t_desg))
 
-    # 2. CF con Lógica de Tramo Anterior 
+    # 2. CF - Búsqueda Normal (Sin Política de plazos >= 24)
     cf_anual_aplicado = 5.4 
     cf_mensual_viz = 5.4 / 12.0
     tramo_usado = "Fallback"
@@ -94,18 +93,14 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
         df_r['cf'] = df_r['cf'].astype(str).str.replace(',', '.').astype(float)
         df_r = df_r.sort_values(by='plazo_desde').reset_index(drop=True)
         
+        # Buscamos el tramo que corresponde exactamente al plazo ingresado
         f_idx = df_r[(df_r['plazo_desde'] <= in_cuotas) & (df_r['plazo_hasta'] >= in_cuotas)].index
         
         if not f_idx.empty:
             idx = f_idx[0]
-            
-            if in_cuotas >= 24 and idx > 0:
-                cf_mensual_viz = df_r.loc[idx - 1, 'cf']
-                tramo_usado = f"{df_r.loc[idx - 1, 'plazo_desde']}-{df_r.loc[idx - 1, 'plazo_hasta']}m"
-            else:
-                cf_mensual_viz = df_r.loc[idx, 'cf']
-                tramo_usado = f"{df_r.loc[idx, 'plazo_desde']}-{df_r.loc[idx, 'plazo_hasta']}m"
-                
+            # Asignación normal sin importar el plazo
+            cf_mensual_viz = df_r.loc[idx, 'cf']
+            tramo_usado = f"{df_r.loc[idx, 'plazo_desde']}-{df_r.loc[idx, 'plazo_hasta']}m"
             cf_anual_aplicado = cf_mensual_viz * 12.0
     except Exception as e:
         pass
@@ -119,11 +114,8 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     d_segm = obtener_valor_matriz('segmentos', in_segmento, monto_bruto)
     tasa_p1 = tasa_res_anual + d_segm
     
-    # =========================================================================
-    # NUEVA LÓGICA: Paso 4 - Descuento Perfil (Matriz mensual -> Ajuste Anual)
-    # =========================================================================
     d_perf_mensual = obtener_valor_matriz('perfiles', in_perfil, monto_bruto)
-    d_perf = d_perf_mensual * 12.0  # Anualizamos para sumarlo a la cascada
+    d_perf = d_perf_mensual * 12.0
     tasa_p2 = tasa_p1 + d_perf
     
     p_can = obtener_valor_matriz('canal', in_canal, monto_bruto)
@@ -159,14 +151,14 @@ def com_simulacion_pyme(in_fecha_curse, in_primer_venc, in_monto_liquido, in_cuo
     cae = (tir * 12.0 * 100.0) if not math.isnan(tir) else 0.0
 
     return {
-        "monto_bruto": monto_bruto, "valor_cuota": valor_cuota, "tasa_mensual": tasa_mensual,
-        "cae_sernac": cae, "tabla_desarrollo": tabla,
-        "detalle_cascada": [
-            {"Concepto": "1. Spread Base", "Ajuste": None, "Valor Mensual": sp_base / 12.0},
-            {"Concepto": f"2. Tasa Inc. CF (Tramo usado: {tramo_usado})", "Ajuste": cf_mensual_viz, "Valor Mensual": tasa_res_anual / 12.0},
-            {"Concepto": "3. Tasa Paso 1 (Desc. Segmento)", "Ajuste": d_segm / 12.0, "Valor Mensual": tasa_p1 / 12.0},
-            {"Concepto": "4. Tasa Paso 2 (Desc. Perfil)", "Ajuste": d_perf / 12.0, "Valor Mensual": tasa_p2 / 12.0},
-            {"Concepto": f"5. Tasa Paso 3 (Desc. Canal {p_can}%)", "Ajuste": -(tasa_p2 - tasa_p3) / 12.0, "Valor Mensual": tasa_p3 / 12.0},
-            {"Concepto": f"6. TASA FINAL (Desc. Seguro {p_seg}%)", "Ajuste": -(tasa_p3 - tasa_final_anual) / 12.0, "Valor Mensual": tasa_mensual}
+        \"monto_bruto\": monto_bruto, \"valor_cuota\": valor_cuota, \"tasa_mensual\": tasa_mensual,
+        \"cae_sernac\": cae, \"tabla_desarrollo\": tabla,
+        \"detalle_cascada\": [
+            {\"Concepto\": \"1. Spread Base\", \"Ajuste\": None, \"Valor Mensual\": sp_base / 12.0},
+            {\"Concepto\": f\"2. Tasa Inc. CF (Tramo usado: {tramo_usado})\", \"Ajuste\": cf_mensual_viz, \"Valor Mensual\": tasa_res_anual / 12.0},
+            {\"Concepto\": \"3. Tasa Paso 1 (Desc. Segmento)\", \"Ajuste\": d_segm / 12.0, \"Valor Mensual\": tasa_p1 / 12.0},
+            {\"Concepto\": \"4. Tasa Paso 2 (Desc. Perfil)\", \"Ajuste\": d_perf / 12.0, \"Valor Mensual\": tasa_p2 / 12.0},
+            {\"Concepto\": f\"5. Tasa Paso 3 (Desc. Canal {p_can}%)\", \"Ajuste\": -(tasa_p2 - tasa_p3) / 12.0, \"Valor Mensual\": tasa_p3 / 12.0},
+            {\"Concepto\": f\"6. TASA FINAL (Desc. Seguro {p_seg}%)\", \"Ajuste\": -(tasa_p3 - tasa_final_anual) / 12.0, \"Valor Mensual\": tasa_mensual}
         ]
     }
