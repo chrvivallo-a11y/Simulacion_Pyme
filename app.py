@@ -160,7 +160,7 @@ with tab_masivo:
                                 in_monto_liquido=int(row['monto']), 
                                 in_cuotas=int(row['plazo']), 
                                 in_garantia_estatal=es_ggee_val, 
-                                in_perfil=str(row['perfil']).strip(), 
+                                in_perfil=str(row['perfil']).split('.')[0].strip(), 
                                 in_segmento=str(row['segmento']).upper().strip(), 
                                 in_canal=str(row['canal']).upper().strip(), 
                                 in_seguro=str(row['seguro']).upper().strip()
